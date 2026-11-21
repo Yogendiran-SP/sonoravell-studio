@@ -765,6 +765,68 @@ body:has(#dock[data-view=mixer] .mixer-device-bar).dock-custom:not(.dock-collaps
 .velocity-bar:hover{background:#a7d3de}
 .context-menu kbd{margin-left:auto;color:#a6bed2;font-size:10px;white-space:nowrap}
 
+/* Stock plug-in faces */
+#plugin-dialog { width: min(880px, 96vw); }
+.stock-device { padding: 12px; background: #15222b; color: #dfe9ed; }
+.device-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 4px 10px; }
+.device-toolbar .gear-toolbar { flex: 1; padding: 0; }
+.device-toolbar .gear-art { width: 40px; min-width: 40px; }
+.device-surface {
+  padding: 10px; border: 1px solid #526671; border-radius: 12px;
+  background: linear-gradient(145deg,#34454d,#202e37 55%,#213139);
+  box-shadow: inset 0 1px #75909966, 0 6px 14px #0910177d;
+}
+.device-display-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 8px; }
+.device-display-head strong { flex: 1; font-size: 12px; }
+.device-display-head label { display: flex; gap: 5px; align-items: center; font-size: 11px; color: #c9dce4; }
+.device-display-head select { width: auto; }
+.device-plot {
+  position: relative; height: clamp(128px, 25vh, 198px); margin-bottom: 10px; overflow: hidden;
+  border-radius: 8px; box-shadow: inset 0 0 0 1px #506777; background: #0a1720;
+}
+.device-plot.eq-plot { height: clamp(160px, 36vh, 280px); }
+.device-plot #plugin-response { width: 100%; height: 100%; margin: 0; border: 0; }
+.device-plot-handle {
+  position: absolute; touch-action: none; transform: translate(-50%, -50%); cursor: grab;
+  padding: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--point-ink);
+  border: 2px solid #102630; box-shadow: 0 0 0 1px var(--point-ink);
+}
+.device-plot-handle:hover,.device-plot-handle:focus-visible,.device-plot-handle[aria-pressed="true"] {
+  background: var(--point-ink); box-shadow: 0 0 0 2px #edf8fa, 0 0 12px var(--point-ink); z-index: 1;
+}
+.device-plot-handle:active { cursor: grabbing; }
+.device-plot-handle[data-band-off] { background: #203843; border-color: #324854; }
+.eq-bands { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; }
+.eq-bands button { border-top: 2px solid var(--point-ink); flex: 1; white-space: nowrap; }
+.device-band-detail { display: flex; gap: 8px; align-items: stretch; }
+.device-band-detail .dial-grid { flex: 1; }
+.device-surface .dial-grid { grid-template-columns: repeat(auto-fit,minmax(83px,1fr)); gap: 6px; }
+.device-surface .face-dial {
+  padding: 6px 4px; min-width: 0; background: linear-gradient(165deg,#344852,#253640);
+  border-color: #647881; gap: 4px;
+}
+.device-surface .face-dial .rotary { width: 42px; height: 42px; }
+.device-surface .face-dial .rotary > span { width: 31px; height: 31px; }
+.device-surface .face-dial > strong { font-size: 10px; }
+.device-surface .face-dial .dial-value input { width: 52px; font-size: 10px; }
+.pedal-board { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,244px),1fr)); gap: 9px; }
+.pedal-stomp {
+  display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 8px;
+  border: 1px solid #637782; border-radius: 9px; background: linear-gradient(145deg,#354351,#26333d);
+}
+.pedal-stomp:nth-child(3n+2) { background: linear-gradient(135deg,#465149,#2a3938); }
+.pedal-stomp:nth-child(3n+3) { background: linear-gradient(135deg,#4d4556,#332d47); }
+.pedal-stomp[data-active="true"] { border-color: #8ecdb6; }
+.pedal-stomp header { display: flex; gap: 7px; align-items: center; cursor: grab; }
+.pedal-stomp header b,.pedal-stomp header small { display: block; }
+.pedal-stomp header small { color: #b7c5ca; }
+.pedal-stomp header .pedal-order { margin-left: auto; display: flex; gap: 3px; }
+.pedal-stomp header button { padding-inline: 5px; }
+.pedal-stomp .dial-grid { grid-template-columns: repeat(auto-fit,minmax(67px,1fr)); }
+.pedal-stomp .stomp-switch { margin-top: auto; align-self: center; min-width: 85px; border-radius: 18px; }
+.pedal-stomp .stomp-switch[aria-pressed="true"] { color: #a3ffcf; }
+.global-event.is-selected { outline: 2px solid var(--lane-ink); outline-offset: 1px; z-index: 2; }
+
 </style>
 
 </head>
@@ -1074,6 +1136,43 @@ Object.assign(SW, (() => {
     'Polarity': {gain:[-1,1,-1,2,'']},
     'Utility Gain': {gain:[-48,18,0,.1,'dB']}
   };
+  const spectrumBands = [
+    ['lc','Low cut','highpass',35,'#efae76'],
+    ['ls','Low shelf','lowshelf',105,'#f8cb7e'],
+    ['lm','Low mid','peaking',280,'#cddd80'],
+    ['mid','Mid','peaking',1050,'#83dfbe'],
+    ['hm','High mid','peaking',3300,'#80c5f5'],
+    ['hs','High shelf','highshelf',8000,'#a4b6ff'],
+    ['hc','High cut','lowpass',16000,'#d2a9ef']
+  ];
+  const pedalStages = [
+    ['level','Utility Gain'],['drive','Drive'],['cab','Cabinet Filter'],['chorus','Chorus'],
+    ['trem','Tremolo'],['echo','Echo'],['room','Room Reverb'],['comp','Compressor']
+  ];
+  const spectrumSpec=fx['Spectrum EQ']={};
+  for(const [key,,type,frequency] of spectrumBands){
+    spectrumSpec[key+'On']=[0,1,type==='highpass'||type==='lowpass'?0:1,1,''];
+    spectrumSpec[key+'Freq']=[20,20000,frequency,1,'Hz'];
+    if(['highpass','lowpass','peaking'].includes(type))spectrumSpec[key+'Q']=[.1,18,type==='peaking'?1:.7,.1,'Q'];
+    if(!['highpass','lowpass'].includes(type))spectrumSpec[key+'Gain']=[-24,24,0,.1,'dB'];
+  }
+  spectrumSpec.output=[-24,18,0,.1,'dB'];
+  const pedalSpec=fx['Guitar Pedalboard']={};
+  for(const [index,[key,type]] of pedalStages.entries()){
+    pedalSpec[key+'Order']=[0,pedalStages.length-1,index,1,''];
+    pedalSpec[key+'On']=[0,1,key==='drive'||key==='cab'?1:0,1,''];
+    for(const [param,spec] of Object.entries(fx[type]))pedalSpec[key+'_'+param]=spec;
+  }
+  const structuralFXParam=(type,key)=>type==='Spectrum EQ'&&key.endsWith('On')||
+    type==='Guitar Pedalboard'&&/(?:Order|On)$/.test(key);
+  const pedalOrder=e=>[...pedalStages].sort(([a],[b])=>e.params[a+'Order']-e.params[b+'Order']);
+  function validEffectParams(type,params){
+    if(!Object.hasOwn(fx,type)||!params||!Object.entries(fx[type]).every(([key,[min,max]])=>{
+      const value=params[key];
+      return Number.isFinite(value)&&value>=min&&value<=max&&(!structuralFXParam(type,key)||Number.isInteger(value));
+    }))return false;
+    return type!=='Guitar Pedalboard'||new Set(pedalStages.map(([key])=>params[key+'Order'])).size===pedalStages.length;
+  }
   const clone = value => structuredClone(value);
   const uid = () => globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2);
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -1176,7 +1275,9 @@ Object.assign(SW, (() => {
     if(t.type!=='master'&&SW.spatialSpecs){
       for(const [key,spec] of Object.entries(SW.spatialSpecs)) lanes['space:'+key]=spec;
     }
-    for(const e of t.fx) for(const [key,spec] of Object.entries(fx[e.type])) lanes['fx:'+e.id+':'+key]=[e.type+' · '+key,...spec.slice(0,2),spec[3],spec[4]];
+    for(const e of t.fx) for(const [key,spec] of Object.entries(fx[e.type])){
+      if(!structuralFXParam(e.type,key))lanes['fx:'+e.id+':'+key]=[e.type+' · '+key,...spec.slice(0,2),spec[3],spec[4]];
+    }
     return lanes;
   }
   function laneValue(t,key) {
@@ -1205,7 +1306,8 @@ Object.assign(SW, (() => {
       default:return x;
     }
   }
-  return {fadeShapes,fadeLevel,colors,instruments,fx,clone,uid,clamp,db,quantize,seconds,noteName,project,channel,clip,note,effect,songEnd,demo,validRoute,automationValue,splitClip,laneSpecs,laneValue,setLaneValue};
+  return {fadeShapes,fadeLevel,colors,instruments,fx,spectrumBands,pedalStages,pedalOrder,structuralFXParam,validEffectParams,
+    clone,uid,clamp,db,quantize,seconds,noteName,project,channel,clip,note,effect,songEnd,demo,validRoute,automationValue,splitClip,laneSpecs,laneValue,setLaneValue};
 })());
 
 </script>
@@ -1281,7 +1383,7 @@ Object.assign(SW, (() => {
 <script>
 'use strict';
 Object.assign(SW, (() => {
-  const {clamp,validRoute,fx,instruments}=SW;
+  const {clamp,validRoute,instruments}=SW;
   const encode = new TextEncoder();
   function wav(buffer,bits=24,{dither=false,tags={},channelMask=0}={}) {
     const channels=buffer.numberOfChannels, bytes=bits/8, size=buffer.length*channels*bytes;
@@ -1419,7 +1521,7 @@ Object.assign(SW, (() => {
       }
       for(const e of t.fx){
         checkId(e.id);
-        assertion(Object.hasOwn(fx,e.type)&&e.params&&Object.entries(fx[e.type]).every(([key,spec])=>finite(e.params[key],spec[0],spec[1])),'effect parameters');
+        assertion(SW.validEffectParams(e.type,e.params),'effect parameters');
       }
       assertion(t.instrumentDisabled===undefined||t.type==='midi'&&typeof t.instrumentDisabled==='boolean','instrument state');
       assertion(t.instrumentOnly===undefined||t.type==='midi'&&t.instrumentOnly===true&&!t.clips.length&&!t.folder,'retained instrument state');
@@ -1791,6 +1893,8 @@ Object.assign(SW, (() => {
     'Chorus','Tremolo','Stereo Width','Low Shelf','Band Pass','Notch','Three-Band EQ','Parallel Compressor',
     'Slap Delay','Hall Reverb','Flanger','Phaser','Auto Pan','Soft Clipper','Bit Reducer','Cabinet Filter','Polarity','Utility Gain'];
   function art(name){
+    if(name==='Spectrum EQ')name='Parametric EQ';
+    if(name==='Guitar Pedalboard')name='Drive';
     const i=artNames.indexOf(name);
     return i<0?null:{x:(i%6)*20,y:Math.floor(i/6)*20};
   }
@@ -2673,6 +2777,37 @@ Object.assign(SW, (() => {
     return cache[kind]=buffer;
   }
   const direct=n=>n;
+  const filterTypes={'Parametric EQ':'peaking','Low Cut':'highpass','Low Pass':'lowpass',
+    'High Shelf':'highshelf','Low Shelf':'lowshelf','Band Pass':'bandpass',Notch:'notch'};
+  function filterStages(e){
+    if(Object.hasOwn(filterTypes,e.type)){
+      return [{type:filterTypes[e.type],frequency:'frequency',gain:'gain' in e.params?'gain':undefined,
+        Q:'q' in e.params?'q':undefined}];
+    }
+    if(e.type==='Spectrum EQ'){
+      return SW.spectrumBands.filter(([key])=>e.params[key+'On']).map(([key,,type])=>({
+        type,frequency:key+'Freq',gain:key+'Gain' in e.params?key+'Gain':undefined,Q:key+'Q' in e.params?key+'Q':undefined
+      }));
+    }
+    if(e.type==='Three-Band EQ')return [
+      {type:'lowshelf',frequency:160,gain:'low'},{type:'peaking',frequency:'frequency',Q:.8,gain:'mid'},
+      {type:'highshelf',frequency:6000,gain:'high'}
+    ];
+    if(e.type==='Cabinet Filter')return [
+      {type:'highpass',frequency:'low'},{type:'peaking',frequency:2100,Q:.8,gain:'presence'},
+      {type:'lowpass',frequency:'high'}
+    ];
+    return [];
+  }
+  function configureFilter(node,stage,link){
+    node.type=stage.type;
+    for(const key of ['frequency','gain','Q']){
+      const source=stage[key];
+      if(typeof source==='string')link(source,node[key]);
+      else if(typeof source==='number')node[key].value=source;
+    }
+    return node;
+  }
   function insert(ctx,e,units){
     let input,output,reduction=null,filters=[];
     const params={};
@@ -2685,12 +2820,26 @@ Object.assign(SW, (() => {
       link('mix',dry.gain,v=>1-v);link('mix',wet.gain);
     };
     switch(e.type){
-      case 'Parametric EQ': case 'Low Cut': case 'Low Pass': case 'High Shelf': case 'Low Shelf': case 'Band Pass': case 'Notch': {
-        input=output=ctx.createBiquadFilter();filters=[input];
-        input.type={'Parametric EQ':'peaking','Low Cut':'highpass','Low Pass':'lowpass','High Shelf':'highshelf','Low Shelf':'lowshelf','Band Pass':'bandpass',Notch:'notch'}[e.type];
-        link('frequency',input.frequency);
-        if('q' in e.params) link('q',input.Q);
-        if('gain' in e.params) link('gain',input.gain);
+      case 'Parametric EQ': case 'Low Cut': case 'Low Pass': case 'High Shelf': case 'Low Shelf': case 'Band Pass':
+      case 'Notch': case 'Three-Band EQ': case 'Cabinet Filter': case 'Spectrum EQ': {
+        filters=filterStages(e).map(stage=>configureFilter(ctx.createBiquadFilter(),stage,link));
+        for(let i=1;i<filters.length;i++)filters[i-1].connect(filters[i]);
+        input=filters[0]||ctx.createGain();output=filters.at(-1)||input;
+        if(e.type==='Spectrum EQ'){
+          const level=ctx.createGain();
+          output.connect(level);output=level;link('output',level.gain,db);
+        }
+        break;
+      }
+      case 'Guitar Pedalboard': {
+        input=output=ctx.createGain();
+        for(const [stage,type] of SW.pedalOrder(e)){
+          if(!e.params[stage+'On'])continue;
+          const values=Object.fromEntries(Object.keys(SW.fx[type]).map(key=>[key,e.params[stage+'_'+key]]));
+          const child=insert(ctx,{type,params:values},units);
+          output.connect(child.input);output=child.output;
+          for(const [key,targets] of Object.entries(child.params))params[stage+'_'+key]=targets;
+        }
         break;
       }
       case 'Compressor': case 'Limiter': case 'Parallel Compressor': {
@@ -2745,21 +2894,6 @@ Object.assign(SW, (() => {
           const gain=ctx.createGain();
           split.connect(gain,src);gain.connect(output,0,dst);
           link('width',gain.gain,v=>src===dst?(1+v)/2:(1-v)/2);
-        }
-        break;
-      }
-      case 'Three-Band EQ': case 'Cabinet Filter': {
-        const low=ctx.createBiquadFilter(), mid=ctx.createBiquadFilter(), high=ctx.createBiquadFilter();
-        input=low;output=high;filters=[low,mid,high];
-        low.connect(mid).connect(high);
-        mid.type='peaking';mid.Q.value=.8;
-        if(e.type==='Three-Band EQ'){
-          low.type='lowshelf';low.frequency.value=160;
-          high.type='highshelf';high.frequency.value=6000;
-          link('low',low.gain);link('mid',mid.gain);link('high',high.gain);link('frequency',mid.frequency);
-        }else{
-          low.type='highpass';high.type='lowpass';mid.frequency.value=2100;
-          link('low',low.frequency);link('high',high.frequency);link('presence',mid.gain);
         }
         break;
       }
@@ -2913,7 +3047,8 @@ Object.assign(SW, (() => {
       for(const e of t.fx){
         if(e.bypass){
           const passthrough=ctx.createGain();
-          points.set('fx:'+e.id,{input:passthrough,output:passthrough});
+          const node={input:passthrough,output:passthrough};
+          points.set('fx:'+e.id,node);processors.set(e.id,node);
           continue;
         }
         const node=insert(ctx,e,units);
@@ -3327,7 +3462,305 @@ Object.assign(SW, (() => {
       if(ctx.state!=='closed') await ctx.close();
     }
   }
-  return {audioContext,buildGraph,schedule,renderAudio,voice,overrideParam,audibility,renderRealtime};
+  return {audioContext,buildGraph,schedule,renderAudio,voice,overrideParam,audibility,renderRealtime,filterStages,configureFilter};
+})());
+
+</script>
+<script>
+'use strict';
+Object.assign(SW, (() => {
+  const {clamp,db}=SW;
+  const lowHz=20, highHz=20000;
+  const bounds={left:.075,right:.938,top:.09,bottom:.86};
+  const frequencies=Float32Array.from({length:240},(_,i)=>lowHz*(highHz/lowHz)**(i/239));
+  const frequencyX=value=>Math.log(clamp(value,lowHz,highHz)/lowHz)/Math.log(highHz/lowHz);
+  const frequencyAt=x=>lowHz*(highHz/lowHz)**clamp(x,0,1);
+  const eqY=(value,range)=>.5-value/(range*2);
+  const coordinate=(x,y)=>[bounds.left+(bounds.right-bounds.left)*clamp(x,0,1),
+    bounds.top+(bounds.bottom-bounds.top)*clamp(y,0,1)];
+  function plotPosition(x,y){
+    return [(x-bounds.left)/(bounds.right-bounds.left),(y-bounds.top)/(bounds.bottom-bounds.top)].map(n=>clamp(n,0,1));
+  }
+  const stockColors=['#e1ab77','#9cdbc4','#a4b6ff'];
+  function eqHandles(e){
+    if(e.type==='Spectrum EQ')return SW.spectrumBands.map(([key,label,type,,color])=>({
+      key,label,color,on:Boolean(e.params[key+'On']),x:key+'Freq',
+      y:key+'Gain' in e.params?key+'Gain':undefined,q:key+'Q' in e.params?key+'Q':undefined,
+      cutoff:type==='lowpass'||type==='highpass'
+    }));
+    if(e.type==='Three-Band EQ')return [
+      {key:'low',label:'Low shelf',frequency:160,y:'low'},
+      {key:'mid',label:'Mid bell',x:'frequency',y:'mid'},
+      {key:'high',label:'High shelf',frequency:6000,y:'high'}
+    ].map((handle,i)=>({...handle,on:true,color:stockColors[i]}));
+    if(e.type==='Cabinet Filter')return [
+      {key:'low',label:'Low cut',x:'low',cutoff:true},
+      {key:'presence',label:'Presence',frequency:2100,y:'presence'},
+      {key:'high',label:'High cut',x:'high',cutoff:true}
+    ].map((handle,i)=>({...handle,on:true,color:stockColors[i]}));
+    if(!SW.filterStages(e).length)return [];
+    return [{key:'filter',label:e.type,color:'#83dfbe',on:true,x:'frequency',
+      y:'gain' in e.params?'gain':undefined,q:'q' in e.params?'q':undefined,
+      cutoff:e.type==='Low Cut'||e.type==='Low Pass'}];
+  }
+  function pluginPlot(e,instrument){
+    if(!e)return instrument==='Drums'?'drums':'envelope';
+    if(e.type==='Guitar Pedalboard')return 'pedals';
+    if(eqHandles(e).length)return 'eq';
+    if(['Compressor','Limiter','Parallel Compressor'].includes(e.type))return 'dynamics';
+    if(['Echo','Slap Delay'].includes(e.type))return 'delay';
+    if(['Room Reverb','Hall Reverb'].includes(e.type))return 'reverb';
+    if(['Chorus','Tremolo','Flanger','Phaser','Auto Pan'].includes(e.type))return 'modulation';
+    if(e.type==='Stereo Width')return 'stereo';
+    if(['Drive','Soft Clipper','Bit Reducer'].includes(e.type))return 'drive';
+    return 'level';
+  }
+  const plotTitles={eq:'Frequency response',pedals:'Signal',dynamics:'Input to output',delay:'Echo taps',
+    reverb:'Reverb tail',modulation:'Modulation',stereo:'Stereo vectorscope',drive:'Transfer curve',
+    level:'Signal',envelope:'Amplitude envelope',drums:'Drum envelope'};
+  const standardHandles={
+    dynamics:[{key:'threshold',label:'Threshold',x:'threshold',y:'ratio'}],
+    delay:[{key:'tap',label:'First repeat',x:'time',y:'feedback'}],
+    reverb:[{key:'mix',label:'Reverb mix',y:'mix',fixedX:.19}],
+    modulation:[{key:'lfo',label:'Modulation',x:'rate',y:'depth'}],
+    stereo:[{key:'width',label:'Stereo width',x:'width',fixedY:.72}],
+    drive:[{key:'drive',label:'Drive controls',x:'drive',y:'output'}],
+    level:[{key:'gain',label:'Gain',y:'gain',fixedX:.5}],
+    envelope:[{key:'attack',label:'Attack',x:'attack',fixedY:.08},
+      {key:'decay',label:'Decay and sustain',x:'decay',y:'sustain'},
+      {key:'release',label:'Release',x:'release',fixedY:.92}],
+    drums:[{key:'drum',label:'Kick decay and pitch',x:'decay',y:'pitch'}]
+  };
+  function pluginHandles(mode,e){
+    if(mode==='eq')return eqHandles(e);
+    const handles=standardHandles[mode]||[];
+    return handles.map(handle=>{
+      const {x,y}=handle, params=e?.params;
+      return {...handle,color:'#8ddfc6',on:true,
+        x:params&&x&&!(x in params)?(x==='drive'?'amount':undefined):x,
+        y:params&&y&&!(y in params)?undefined:y};
+    });
+  }
+  const normalize=(value,spec)=>SW.dialFraction(value,spec[0],spec[1],spec[4]);
+  const dial=(fraction,spec)=>SW.dialValue(fraction,spec[0],spec[1],spec[3],spec[4]);
+  function envelopePoints(values,specs){
+    const attack=.03+.26*normalize(values.attack,specs.attack);
+    const decay=attack+.035+.23*normalize(values.decay,specs.decay);
+    const hold=decay+.12;
+    return [attack,decay,hold,hold+.035+.26*normalize(values.release,specs.release)];
+  }
+  function handlePosition(mode,handle,values,specs,range){
+    const {x,y}=handle;
+    if(mode==='eq')return coordinate(frequencyX(values[x]??handle.frequency),y?eqY(values[y],range):.5);
+    if(mode==='envelope'){
+      const stages=envelopePoints(values,specs);
+      return coordinate(stages[{attack:0,decay:1,release:3}[handle.key]],y?.length ? .92-values[y]*.84 : handle.fixedY);
+    }
+    return coordinate(x?normalize(values[x],specs[x]):handle.fixedX??.5,
+      y?1-normalize(values[y],specs[y]):handle.fixedY??.5);
+  }
+  function handleValues(mode,handle,position,values,specs,range){
+    const [tx,ty]=plotPosition(...position),{x,y}=handle,changes={};
+    if(x){
+      let fraction=tx;
+      if(mode==='envelope'){
+        const [attack,,hold]=envelopePoints(values,specs);
+        fraction=({attack:(tx-.03)/.26,decay:(tx-attack-.035)/.23,release:(tx-hold-.035)/.26})[handle.key];
+      }
+      changes[x]=mode==='eq'?clamp(Math.round(frequencyAt(tx)),specs[x][0],specs[x][1]):dial(fraction,specs[x]);
+    }
+    if(y){
+      const fraction=mode==='eq'?.5-(ty-.5)*range*2/(specs[y][1]-specs[y][0]):
+        mode==='envelope'?(.92-ty)/.84:1-ty;
+      changes[y]=dial(fraction,specs[y]);
+    }
+    return changes;
+  }
+  // Reuse the processing engine's BiquadFilter definitions for the stopped response.
+  let responseContext, cachedDesign;
+  function offlineFilters(e,sampleRate){
+    const Offline=globalThis.OfflineAudioContext||globalThis.webkitOfflineAudioContext;
+    if(!Offline)return [];
+    if(responseContext?.sampleRate!==sampleRate){
+      responseContext=new Offline(1,1,sampleRate);cachedDesign=null;
+    }
+    const stages=SW.filterStages(e), signature=JSON.stringify(stages);
+    if(signature!==cachedDesign?.signature){
+      cachedDesign={signature,filters:stages.map(()=>responseContext.createBiquadFilter())};
+    }
+    const link=(key,param)=>{param.value=e.params[key];};
+    return cachedDesign.filters.map((node,i)=>SW.configureFilter(node,stages[i],link));
+  }
+  const magnitudes=new Float32Array(frequencies.length), phases=new Float32Array(frequencies.length);
+  const response=new Float32Array(frequencies.length);
+  function frequencyResponse(e,processor,sampleRate=48000){
+    response.fill(e.bypass?0:e.type==='Spectrum EQ'?e.params.output:0);
+    if(e.bypass)return response;
+    for(const filter of processor?.filters||offlineFilters(e,sampleRate)){
+      filter.getFrequencyResponse(frequencies,magnitudes,phases);
+      for(let i=0;i<response.length;i++){
+        if(Number.isFinite(magnitudes[i]))response[i]+=20*Math.log10(Math.max(.00001,magnitudes[i]));
+      }
+    }
+    return response;
+  }
+  function createPluginProbe(){
+    let current;
+    function clear(){
+      if(!current)return;
+      for(const [from,to] of current.connections)try{from.disconnect(to);}catch{}
+      current=null;
+    }
+    function read(graph,track,e){
+      const node=graph?.tracks?.get(track), processor=e&&node?.processors.get(e.id);
+      const sources=processor?[processor.input,processor.output]:!e&&node?[node.analyzer]:[];
+      if(!sources[0]||!graph.ctx?.createAnalyser){clear();return null;}
+      if(current?.graph!==graph||current.track!==track||current.id!==e?.id){
+        clear();
+        const left=new Float32Array(1024),right=new Float32Array(1024);
+        const connections=[], connect=(from,to,...channels)=>{from.connect(to,...channels);connections.push([from,to]);return to;};
+        const tap=source=>{
+          const analyzer=connect(source,graph.ctx.createAnalyser());
+          analyzer.fftSize=4096;analyzer.smoothingTimeConstant=.78;
+          return analyzer;
+        };
+        const input=tap(sources[0]),output=processor?tap(sources[1]):input;
+        const stereo=e?.type==='Stereo Width';
+        const split=stereo?connect(processor.output,graph.ctx.createChannelSplitter(2)):null;
+        const fftIn=new Float32Array(input.frequencyBinCount),fftOut=new Float32Array(output.frequencyBinCount);
+        const stereoLeft=stereo?connect(split,graph.ctx.createAnalyser(),0):null;
+        const stereoRight=stereo?connect(split,graph.ctx.createAnalyser(),1):null;
+        if(stereo)stereoLeft.fftSize=stereoRight.fftSize=1024;
+        current={graph,track,id:e?.id,processor,input,output,connections,fftIn,fftOut,left,right,stereoLeft,stereoRight};
+      }
+      const signal=current;
+      signal.input.getFloatFrequencyData(signal.fftIn);
+      signal.output.getFloatFrequencyData(signal.fftOut);
+      (signal.stereoLeft||signal.output).getFloatTimeDomainData(signal.left);
+      if(signal.stereoRight)signal.stereoRight.getFloatTimeDomainData(signal.right);
+      return signal;
+    }
+    return {read,clear};
+  }
+  function paintPluginPlot(canvas,mode,e,v,specs,signal,{range=24,source='both',sampleRate=48000}={}){
+    const g=canvas?.getContext?.('2d');
+    if(!g?.save)return;
+    const {width:w,height:h}=canvas;
+    const [left,top]=coordinate(0,0).map((value,i)=>value*[w,h][i]);
+    const [right,bottom]=coordinate(1,1).map((value,i)=>value*[w,h][i]);
+    const xy=(x,y)=>[left+x*(right-left),top+y*(bottom-top)];
+    const path=(points,ink,thickness=1,fill)=>{
+      g.beginPath();
+      points.forEach(([x,y],i)=>i?g.lineTo(...xy(x,y)):g.moveTo(...xy(x,y)));
+      if(fill){g.closePath();g.fillStyle=fill;g.fill();}
+      g.strokeStyle=ink;g.lineWidth=thickness;g.stroke();
+    };
+    const label=(text,x,y)=>g.fillText(text,...xy(x,y));
+    g.fillStyle='#0a1720';g.fillRect(0,0,w,h);
+    g.font='12px ui-monospace, monospace';g.fillStyle='#9fb3bf';
+    if(mode==='eq'){
+      for(const hz of [20,50,100,200,500,1000,2000,5000,10000,20000]){
+        const x=frequencyX(hz);
+        path([[x,0],[x,1]],'#263945');
+        g.textAlign=x>.97?'right':x<.01?'left':'center';
+        label(hz>=1000?hz/1000+'k':String(hz),x,1.11);
+      }
+      g.textAlign='right';
+      for(const db of [-range,-range/2,0,range/2,range]){
+        const y=eqY(db,range);
+        path([[0,y],[1,y]],db===0?'#48606b':'#263945');
+        label((db>0?'+':'')+db,-.013,y+.024);
+      }
+      if(source!=='off'){
+        g.textAlign='left';g.fillStyle='#80bba9';
+        label('dBFS',1.011,-.033);
+        for(const level of [0,-24,-48,-72,-96])label(String(level),1.011,-level/96+.024);
+      }
+    }else{
+      for(let i=0;i<=5;i++)path([[i/5,0],[i/5,1]],'#263945');
+      for(let i=0;i<=4;i++)path([[0,i/4],[1,i/4]],i===2?'#48606b':'#263945');
+    }
+    g.save();g.beginPath();g.rect(left,top,right-left,bottom-top);g.clip();
+    if(mode==='eq'){
+      const spectrum=(bins,fill,ink)=>{
+        const points=Array.from(frequencies,(hz,i)=>{
+          const index=hz*signal.input.fftSize/signal.graph.ctx.sampleRate;
+          const lower=Math.floor(index), upper=Math.min(lower+1,bins.length-1);
+          const a=Math.max(-96,bins[lower]??-96),b=Math.max(-96,bins[upper]??-96);
+          return [i/(frequencies.length-1),1-clamp((a+(b-a)*(index-lower)+96)/96,0,1)];
+        });
+        path([[0,1],...points,[1,1]],ink,1,fill);
+      };
+      if(signal&&source!=='off'){
+        if(source==='both'||source==='input')spectrum(signal.fftIn,'#7eacd31a','#7eacd3a8');
+        if(source==='both'||source==='output')spectrum(signal.fftOut,'#6fd5b732','#6fd5b7bc');
+      }
+      const curve=frequencyResponse(e,signal?.processor,signal?.graph.ctx.sampleRate||sampleRate);
+      path(Array.from(curve,(gain,i)=>[i/(curve.length-1),eqY(gain,range)]),e.bypass?'#9ba9ac':'#b5f7df',2.6);
+    }else{
+      const accent=e?.bypass?'#9ba9ac':'#9aeaca';
+      const graph=(fn,ink=accent)=>path(Array.from({length:144},(_,i)=>[i/143,fn(i/143)]),ink,2.2);
+      if(signal&&mode!=='stereo'&&mode!=='pedals'&&mode!=='level'){
+        graph(x=>.5-.46*signal.left[Math.round(x*(signal.left.length-1))],'#7ea9cc69');
+      }
+      if(mode==='envelope'){
+        const [a,d,s,r]=envelopePoints(v,specs), level=.92-v.sustain*.84;
+        const points=[[0,.92],[a,.08],[d,level],[s,level],[r,.92],[1,.92]];
+        path([...points,[1,1],[0,1]],'#5bbba272',1,'#4bdcb521');path(points,accent,2.2);
+      }
+      if(mode==='drums')graph(x=>.91-.82*Math.exp(-x/(.055+v.decay*.55)));
+      if(mode==='delay'){
+        const first=.09+normalize(v.time,specs.time)*.24;
+        path([[0,1],[0,.13]],'#8199b0',2);
+        for(let i=0;i<12&&first+i*first*.67<1;i++){
+          const x=first+i*first*.67, level=v.mix*v.feedback**i;
+          path([[x,1],[x,1-level*.92]],accent,3);
+        }
+      }
+      if(mode==='reverb')graph(x=>1-v.mix*(1-x)**3*(.82+.12*Math.sin(x*308)));
+      if(mode==='modulation')graph(x=>.5+.43*normalize(v.depth,specs.depth)*Math.sin(x*Math.PI*2*(.6+4*normalize(v.rate,specs.rate))));
+      if(mode==='dynamics'){
+        path([[0,1],[1,0]],'#6f8a9e',1);
+        graph(x=>{
+          const input=-80+80*x, ratio=v.ratio??20,knee=e.type==='Limiter'?0:12;
+          const over=input-v.threshold;
+          const reduction=knee&&over>-knee/2&&over<knee/2?(1-1/ratio)*(over+knee/2)**2/(2*knee):Math.max(0,over)*(1-1/ratio);
+          const output=input-reduction;
+          const mix=v.mix??1;
+          return 1-(80+20*Math.log10((1-mix)*db(input)+mix*db(output)))/80;
+        });
+      }
+      if(mode==='drive'){
+        path([[0,1],[1,0]],'#6f8a9e');
+        graph(x=>{
+          const input=x*2-1;
+          if(e.type==='Drive')return .5-.5*v.output*Math.tanh(clamp(input*(.28+v.amount*3.7),-1,1)*2.8);
+          const driven=clamp(input*db(v.drive),-1,1);
+          return e.type==='Soft Clipper'?.5-.5*Math.tanh(1.5*driven)*db(v.output):
+            .5-.5*((1-v.mix)*input+v.mix*Math.round(driven*16)/16);
+        });
+      }
+      if(mode==='stereo'){
+        path([[.5,0],[.5,1]],'#506a78');path([[0,.5],[1,.5]],'#506a78');
+        if(signal)path(Array.from({length:signal.left.length},(_,i)=>[
+          .5+(signal.right[i]-signal.left[i])*.25,.5-(signal.right[i]+signal.left[i])*.25
+        ]),'#92f4d4a2');
+      }
+      if(mode==='pedals'||mode==='level'){
+        if(signal)graph(x=>.5-.46*signal.left[Math.round(x*(signal.left.length-1))]);
+        else path([[0,.5],[1,.5]],accent);
+      }
+    }
+    g.restore();
+    if(mode!=='eq'){
+      g.textAlign='left';g.fillStyle='#9fb3bf';
+      if(mode==='dynamics'){label('−80 dB',0,1.11);g.textAlign='right';label('0 dB',1,1.11);}
+      if(mode==='delay'){label('Dry',0,1.11);g.textAlign='right';label(Math.round(v.time*1000)+' ms per repeat',1,1.11);}
+      if(mode==='modulation'){label(v.rate.toFixed(2)+' Hz',0,1.11);}
+      if(mode==='stereo'){label('L − R',0,1.11);g.textAlign='right';label('L + R',1,1.11);}
+    }
+  }
+  return {pluginPlot,plotTitles,pluginHandles,handlePosition,handleValues,frequencyResponse,createPluginProbe,paintPluginPlot};
 })());
 
 </script>
@@ -3498,11 +3931,11 @@ Object.assign(SW, (() => {
     KeyY:8,KeyH:9,KeyU:10,KeyJ:11,KeyK:12,KeyO:13,KeyL:14,KeyP:15,Semicolon:16,Quote:17
   });
   const effectCategories={
-    EQ:['Parametric EQ','Low Cut','Low Pass','High Shelf','Low Shelf','Band Pass','Notch','Three-Band EQ'],
+    EQ:['Spectrum EQ','Parametric EQ','Low Cut','Low Pass','High Shelf','Low Shelf','Band Pass','Notch','Three-Band EQ'],
     Dynamics:['Compressor','Limiter','Parallel Compressor'],
     Space:['Echo','Room Reverb','Slap Delay','Hall Reverb'],
     Modulation:['Chorus','Tremolo','Flanger','Phaser','Auto Pan'],
-    Color:['Drive','Soft Clipper','Bit Reducer','Cabinet Filter'],
+    Color:['Guitar Pedalboard','Drive','Soft Clipper','Bit Reducer','Cabinet Filter'],
     Utility:['Utility Gain','Stereo Width','Polarity']
   };
   const presets={
@@ -5011,6 +5444,7 @@ Object.assign(SW, (() => {
       let head='<div class="fx-card" tabindex="0" data-fx="'+e.id+'"><header><strong>'+esc(e.type)+'</strong>';
       head+=button('gear-editor','Edit','Open '+e.type+' controls')+toggle('fx-bypass','⏻','Bypass '+e.type,e.bypass)+button('fx-up','↑','Move effect up',i?'':'disabled')+button('fx-down','↓','Move effect down',i<t.fx.length-1?'':'disabled')+button('fx-remove','×','Remove '+e.type)+'</header>';
       for(const [key,spec] of Object.entries(fx[e.type])){
+        if(SW.structuralFXParam(e.type,key)||e.type==='Spectrum EQ'&&key!=='output'||e.type==='Guitar Pedalboard')continue;
         const id='fx:'+e.id+':'+key;
         head+=`<label><button type="button" class="fx-param" data-action="show-lane" data-key="${id}" title="Edit ${esc(key)} automation">${esc(key)}</button><input type="range" aria-label="${esc(e.type+' '+key)}" data-param="${id}" data-owner="${t.id}" min="${spec[0]}" max="${spec[1]}" step="${spec[3]}" value="${e.params[key]}"><output>${fmt(e.params[key],4)} ${spec[4]}</output></label>`;
       }
@@ -5077,8 +5511,7 @@ Object.assign(SW, (() => {
   const consolePresets=readSettings('sw-console-presets',[]);
   const acceptedConsolePresets=Array.isArray(consolePresets)?consolePresets.filter(item=>
     typeof item?.name==='string'&&item.name.length<=80&&item.name.length>0&&Array.isArray(item.chain)&&item.chain.length<=64&&
-    item.chain.every(entry=>Object.hasOwn(fx,entry?.type)&&typeof entry.bypass==='boolean'&&Object.entries(fx[entry.type]).every(([key,spec])=>
-      Number.isFinite(entry.params?.[key])&&entry.params[key]>=spec[0]&&entry.params[key]<=spec[1]))).slice(0,64):[];
+    item.chain.every(entry=>typeof entry?.bypass==='boolean'&&SW.validEffectParams(entry.type,entry.params))).slice(0,64):[];
 
   function consoleSelect(key,label,options){
     return '<select data-change="'+key+'" aria-label="'+esc(label)+'" title="'+esc(label)+'">'+options+'</select>';
@@ -5789,6 +6222,13 @@ Object.assign(SW, (() => {
     },name==='trim-range'?'Cropped clips to range':'Split at range boundaries');
   }
   let editorFocus=null;
+  function setEditorFocus(focus){
+    const previous=editorFocus;
+    if(previous?.kind==='global'&&previous.id!==focus.id)
+      find('[data-global-id="'+previous.id+'"]')?.classList.remove('is-selected');
+    editorFocus=focus;
+    if(focus.kind==='global'&&focus.id)find('[data-global-id="'+focus.id+'"]')?.classList.add('is-selected');
+  }
   const focusedClipboard=new Map();
   function readEditorFocus(target){
     if(!target?.closest)return null;
@@ -5814,7 +6254,7 @@ Object.assign(SW, (() => {
     const fxEl=target.closest('[data-fx]'), strip=target.closest('.console-strip');
     if(fxEl||strip||target.closest('.inspector'))return {kind:'insert',
       track:target.closest('[data-track]')?.dataset.track||currentTrack().id,id:fxEl?.dataset.fx};
-    if(target.closest('.arrange-frame,.wave-editor'))return {kind:'events'};
+    if(target.closest('.arrange-frame,.wave-editor,[data-clip],[data-lane],.track-head'))return {kind:'events'};
     return null;
   }
   function clipboardScope(target){
@@ -6241,9 +6681,7 @@ Object.assign(SW, (() => {
           const state=inserts.find(row=>row.id===e.id);
           if(state){
             e.bypass=Boolean(state.bypass);
-            for(const [key,spec] of Object.entries(fx[e.type])){
-              if(Number.isFinite(state.params[key])) e.params[key]=clamp(state.params[key],spec[0],spec[1]);
-            }
+            if(SW.validEffectParams(e.type,state.params))e.params=clone(state.params);
           }
         }
       }
@@ -6349,6 +6787,9 @@ Object.assign(SW, (() => {
     return legacy+rows+select('add-send','Add send',[option('','Choose bus',''),...buses.map(row=>option(row.id,row.name))].join(''));
   }
   let studioPlugin=null, studioSpatial=null, graphLabel=null, dialDrag=null, movingSource=null;
+  let graphDrag=null, draggedPedal=null, pluginPaintTime=-Infinity;
+  const pluginProbe=SW.createPluginProbe();
+  const pluginPlotOptions={range:24,source:'both'};
   const savedDeviceArt=readSettings('sw-device-art',{});
   let deviceArtwork=Object.fromEntries(Object.entries(savedDeviceArt||{})
     .filter(([,value])=>typeof value==='string'&&value.length<280000&&/^data:image\/(?:webp|png|jpeg);base64,[\w+/=]+$/.test(value)).slice(0,18));
@@ -6409,46 +6850,97 @@ Object.assign(SW, (() => {
     return '<div class="gear-surface">'+gearArt(name)+'<div class="face-controls" aria-label="Controls on illustrated face">'+controls+'</div></div>';
   }
   function pluginOpen(t,e){
-    studioPlugin=e?{track:t.id,id:e.id,type:'fx'}:{track:t.id,type:'inst'};
+    studioPlugin=e?{track:t.id,id:e.id,type:'fx',band:'mid'}:{track:t.id,type:'inst'};
     renderPlugin();
     window.focus?.();
     if(!$('plugin-dialog').open)$('plugin-dialog').showModal();
   }
   function channelById(id){return p.tracks.find(t=>t.id===id)||(id==='master'?p.master:null);}
   function paramLabel(key){
-    return ({q:'Resonance',mix:'Wet mix',frequency:'Frequency',amount:'Drive',time:'Delay time',attack:'Attack',release:'Release',
+    return ({q:'Q',mix:'Wet mix',frequency:'Frequency',amount:'Drive',time:'Delay time',attack:'Attack',release:'Release',
       threshold:'Threshold',ratio:'Ratio',width:'Width',gain:'Gain',tone:'Tone',depth:'Depth',feedback:'Feedback'})[key]||key[0].toUpperCase()+key.slice(1);
+  }
+  function stockDevice(){
+    if(!studioPlugin||studioPlugin.type==='native')return null;
+    const t=channelById(studioPlugin.track);
+    const e=t?.fx.find(row=>row.id===studioPlugin.id);
+    if(!t||studioPlugin.type==='fx'&&!e)return null;
+    const defaults=e?null:SW.instrumentSettings({...t,synth:{}});
+    const specs=e?fx[e.type]:Object.fromEntries(Object.entries(SW.instrumentSpecs(t.instrument)).map(([key,spec])=>
+      [key,[spec[1],spec[2],defaults[key],spec[3],spec[4]]]));
+    const mode=SW.pluginPlot(e,t.instrument);
+    return {t,e,mode,specs,handles:SW.pluginHandles(mode,e),values:e?.params||SW.instrumentSettings(t)};
+  }
+  function stockDial(device,key,label=paramLabel(key)){
+    const {t,e,specs,values}=device,spec=specs[key];
+    return knob(e?'fx':'inst',e?'fx:'+e.id+':'+key:key,label,values[key],[key,spec[0],spec[1],spec[3],spec[4]],t.id,spec[2],true);
+  }
+  function plotHandle(device,handle){
+    const [x,y]=SW.handlePosition(device.mode,handle,device.values,device.specs,pluginPlotOptions.range);
+    return '<button type="button" class="device-plot-handle" data-plot-handle="'+handle.key+'" aria-label="'+esc(handle.label)+
+      '" aria-pressed="'+(device.e?.type==='Spectrum EQ'&&studioPlugin.band===handle.key)+'" title="'+esc(handle.label)+
+      '" style="left:'+x*100+'%;top:'+y*100+'%;--point-ink:'+handle.color+'"'+(!handle.on?' data-band-off':'')+'></button>';
+  }
+  function renderStockControls(device){
+    const {e,handles,specs}=device;
+    if(e?.type==='Spectrum EQ'){
+      const bands=handles.map(handle=>'<button type="button" data-action="eq-select-band" data-key="'+handle.key+
+        '" aria-pressed="'+(studioPlugin.band===handle.key)+'" style="--point-ink:'+handle.color+'">'+
+        esc(handle.label)+(handle.on?'':' · Off')+'</button>').join('');
+      const band=handles.find(handle=>handle.key===studioPlugin.band)||handles[0];
+      return '<div class="eq-bands" role="group" aria-label="EQ bands">'+bands+'</div><div class="device-band-detail">'+
+        toggle('eq-band-power',band.on?'Band on':'Band off','Toggle '+band.label,band.on,'data-key="'+band.key+'"')+
+        '<div class="dial-grid" aria-label="Precision dial controls">'+stockDial(device,band.x,'Frequency')+
+        (band.y?stockDial(device,band.y,'Gain'):'')+(band.q?stockDial(device,band.q,'Q'):'')+stockDial(device,'output','Output')+'</div></div>';
+    }
+    if(e?.type==='Guitar Pedalboard'){
+      const ordered=SW.pedalOrder(e);
+      return '<div class="pedal-board" aria-label="Pedalboard signal order">'+ordered.map(([key,type],index)=>{
+        const active=Boolean(e.params[key+'On']);
+        return '<section class="pedal-stomp" data-pedal="'+key+'" data-active="'+active+'">'+
+          '<header draggable="true" data-pedal-grab="'+key+'" title="Drag to reorder">'+gearArt(type,true)+
+          '<div><small>Slot '+(index+1)+'</small><b>'+esc(type)+'</b></div>'+
+          '<div class="pedal-order">'+button('pedal-earlier','←','Move '+type+' earlier','data-key="'+key+'" '+(!index?'disabled':''))+
+          button('pedal-later','→','Move '+type+' later','data-key="'+key+'" '+(index===ordered.length-1?'disabled':''))+'</div></header>'+
+          '<div class="dial-grid" aria-label="Precision dial controls">'+Object.keys(fx[type]).map(param=>stockDial(device,key+'_'+param,paramLabel(param))).join('')+'</div>'+
+          toggle('pedal-power',active?'Engaged':'Bypassed','Toggle '+type,active,'data-key="'+key+'" class="stomp-switch"')+'</section>';
+      }).join('')+'</div>';
+    }
+    return '<div class="dial-grid" aria-label="Precision dial controls">'+Object.keys(specs).map(key=>stockDial(device,key,
+      e?undefined:SW.instrumentSpecs(device.t.instrument)[key][0])).join('')+'</div>';
   }
   function renderPlugin(){
     if(studioPlugin?.type==='native'){renderNative();return;}
-    const t=channelById(studioPlugin?.track);
-    if(!t)return;
-    const e=t.fx.find(e=>e.id===studioPlugin.id);
-    if(studioPlugin.type==='fx'&&!e){if($('plugin-dialog').open)$('plugin-dialog').close();return;}
+    const device=stockDevice();
+    if(!device){if($('plugin-dialog').open)$('plugin-dialog').close();return;}
+    const {t,e,mode,handles,values}=device;
     const name=e?.type||t.instrument;
     $('plugin-title').textContent=name+' · '+t.name;
-    let toolbar='', renderControls;
+    let toolbar='';
     if(e){
       toolbar='<div class="gear-toolbar" data-track="'+t.id+'" data-fx="'+e.id+'">'+
         toggle('fx-bypass-editor','Power','Toggle bypass',!e.bypass)+button('gear-play','Play / stop','Toggle session playback')+button('gear-reset','Reset parameters')+
         button('gear-copy-preset','Copy settings')+button('gear-paste-preset','Paste settings')+
-        '<output id="plugin-meter" aria-label="Channel output peak">— dBFS</output>'+
+        '<output id="plugin-meter" aria-label="Plug-in output peak">— dBFS</output>'+
         (['Compressor','Limiter','Parallel Compressor'].includes(e.type)?'<output id="plugin-reduction" aria-label="Gain reduction">— dB GR</output>':'')+'</div>';
-      renderControls=(face=false)=>Object.entries(fx[e.type]).map(([key,spec])=>knob('fx','fx:'+e.id+':'+key,paramLabel(key),e.params[key],
-        [key,...spec.slice(0,2),spec[3],spec[4]],t.id,spec[2],face)).join('');
     }else{
-      const settings=SW.instrumentSettings(t), defaults=SW.instrumentSettings({...t,synth:{}});
       const wave=t.instrument!=='Drums'&&t.instrument!=='Sampler'?
-        '<label>Oscillator <select data-gear-wave>'+['sine','triangle','sawtooth','square'].map(w=>option(w,w,settings.wave)).join('')+'</select></label>':'';
+        '<label>Oscillator <select data-gear-wave>'+['sine','triangle','sawtooth','square'].map(w=>option(w,w,values.wave)).join('')+'</select></label>':'';
       toolbar='<div class="gear-toolbar" data-track="'+t.id+'">'+wave+button('gear-note','Play note','Audition the instrument')+
         button('gear-play','Play / stop','Toggle session playback')+button('gear-reset','Reset parameters')+
         (t.instrument==='Sampler'?button('load-sample',p.assets[t.sample]?.name||'Load sample…'):'')+
         '<output id="plugin-meter" aria-label="Channel output peak">— dBFS</output></div>';
-      renderControls=(face=false)=>Object.entries(SW.instrumentSpecs(t.instrument)).map(([key,spec])=>knob('inst',key,spec[0],settings[key],spec,t.id,defaults[key],face)).join('');
     }
-    $('plugin-body').innerHTML='<div class="gear-shell paired-dials">'+gearSurface(name,renderControls(true))+'<div class="gear-controls">'+toolbar+(e?'<canvas id="plugin-response" width="460" height="94" aria-label="Live spectrum and filter response"></canvas>':'')+
-      '<div class="dial-grid" aria-label="Precision dial controls">'+renderControls()+'</div></div></div>';
-    drawPluginAnalysis();
+    const plotOptions=mode==='eq'?'<label>Spectrum <select id="eq-spectrum">'+
+      [['both','In + Out'],['input','Input'],['output','Output'],['off','Off']].map(([key,label])=>option(key,label,pluginPlotOptions.source)).join('')+
+      '</select></label><label>Scale <select id="eq-display-range">'+[6,12,24].map(n=>option(n,'±'+n+' dB',pluginPlotOptions.range)).join('')+'</select></label>':'';
+    $('plugin-body').innerHTML='<div class="stock-device" data-track="'+t.id+'"'+(e?' data-fx="'+e.id+'"':'')+'>'+
+      '<div class="device-toolbar">'+gearArt(name,true)+toolbar+'</div><div class="device-surface">'+
+      '<div class="device-display-head"><strong>'+SW.plotTitles[mode]+'</strong>'+plotOptions+'</div>'+
+      '<div class="device-plot '+(mode==='eq'?'eq-plot':'')+'" data-device-plot><canvas id="plugin-response" width="920" height="'+(mode==='eq'?280:198)+
+      '" aria-label="'+SW.plotTitles[mode]+'"></canvas>'+handles.map(handle=>plotHandle(device,handle)).join('')+'</div>'+
+      renderStockControls(device)+'</div></div>';
+    drawPluginAnalysis(true);
   }
   function spatialOpen(t){
     studioSpatial=t.id;renderSpatial();
@@ -6491,6 +6983,13 @@ Object.assign(SW, (() => {
     return rows+select('cue-add-send','Connect cue',[option('','Choose output',''),...spare.map(c=>option(c.id,c.name))].join(''));
   }
   let copiedKnobs=null;
+  function movePedal(e,from,to){
+    const order=SW.pedalOrder(e).map(([key])=>key);
+    const source=order.indexOf(from), target=typeof to==='number'?source+to:order.indexOf(to);
+    if(source<0||target<0||target>=order.length||source===target)return;
+    order.splice(source,1);order.splice(target,0,from);
+    edit(()=>order.forEach((key,index)=>e.params[key+'Order']=index),'Reordered guitar pedals');
+  }
   function studioAction(el){
     const action=el.dataset.action, t=channelById(el.closest('[data-track]')?.dataset.track)||currentTrack();
     if(action==='track-icon'){openTrackIcons(t);return true;}
@@ -6527,6 +7026,21 @@ Object.assign(SW, (() => {
     if(action==='gear-note'){run(audition)(t,t.instrument==='Drums'?36:60);return true;}
     if(action==='gear-editor'){pluginOpen(t,t.fx.find(e=>e.id===el.closest('[data-fx]')?.dataset.fx));return true;}
     if(action==='gear-inst'){pluginOpen(t);return true;}
+    if(['eq-select-band','eq-band-power','pedal-power','pedal-earlier','pedal-later'].includes(action)){
+      const device=stockDevice(), key=el.dataset.key;
+      if(!device?.e)return true;
+      const {e}=device;
+      if(e.type==='Spectrum EQ'&&device.handles.some(handle=>handle.key===key)){
+        studioPlugin.band=key;
+        if(action==='eq-select-band')renderPlugin();
+        else if(action==='eq-band-power')edit(()=>e.params[key+'On']=1-e.params[key+'On'],'Toggled EQ band');
+      }else if(e.type==='Guitar Pedalboard'&&SW.pedalStages.some(([stage])=>stage===key)){
+        if(action==='pedal-power')edit(()=>e.params[key+'On']=1-e.params[key+'On'],'Toggled pedal');
+        else if(action==='pedal-earlier'||action==='pedal-later')movePedal(e,key,action==='pedal-earlier'?-1:1);
+      }
+      $('plugin-body').querySelector('[data-action="'+action+'"][data-key="'+key+'"]')?.focus({preventScroll:true});
+      return true;
+    }
     if(action==='open-spatial'){if(t.id!=='master')spatialOpen(t);return true;}
     if(action==='cue-create'){
       if(SW.cueSettings(p).length>=16){status('A session supports up to 16 cue mixes.',true);return true;}
@@ -6617,23 +7131,112 @@ Object.assign(SW, (() => {
       return;
     }
     if(kind==='inst'){
+      if((!paramEdit||paramEdit.el!==input)&&SW.instrumentSettings(t)[key]===value)return;
       if(!paramEdit||paramEdit.el!==input) paramEdit={el:input,previous:before()};
       t.synth??={};t.synth[key]=value;
       if(done){const previous=paramEdit.previous;paramEdit=null;commit(previous,valueStatus(t.name,label,value,unit));}
+      else refreshDevicePlot();
       return;
     }
     input.dataset.owner=owner;input.dataset.param=key;
     changeParam(input,done);
+    if(!done&&kind==='fx')refreshDevicePlot();
+  }
+  function focusDeviceHandle(key){$('plugin-body').querySelector('[data-plot-handle="'+key+'"]')?.focus({preventScroll:true});}
+  function refreshDevicePlot(){
+    const device=stockDevice();
+    if(!device)return;
+    for(const handle of device.handles){
+      const el=$('plugin-body').querySelector('[data-plot-handle="'+handle.key+'"]');
+      if(!el)continue;
+      const [x,y]=SW.handlePosition(device.mode,handle,device.values,device.specs,pluginPlotOptions.range);
+      el.style.left=x*100+'%';el.style.top=y*100+'%';
+      el.toggleAttribute('data-band-off',!handle.on);
+      el.title=handle.label+' · '+[handle.x,handle.y].filter(Boolean).map(key=>
+        fmt(device.values[key],3)+' '+device.specs[key][4]).join(' / ');
+    }
+    drawPluginAnalysis(true);
+  }
+  function setPlotValues(device,changes){
+    const {t,e}=device;
+    for(const [key,value] of Object.entries(changes)){
+      if(e){
+        e.params[key]=value;
+        for(const graph of new Set([live?.graph,monitorGraph,previewGraph]))if(graph?.tracks)
+          SW.overrideParam(graph,t.id,'fx:'+e.id+':'+key,value);
+      }else{
+        t.synth??={};t.synth[key]=value;
+      }
+      const id=e?'fx:'+e.id+':'+key:key;
+      const dial=$('plugin-body').querySelector('.rotary[data-gear-key="'+id+'"]');
+      if(dial)displayKnob(dial,value);
+    }
+    refreshDevicePlot();
+  }
+  function plotStatus(device,handle,values){
+    return device.t.name+' · '+handle.label+' · '+Object.entries(values).map(([key,value])=>
+      fmt(value,4)+(device.specs[key][4]?' '+device.specs[key][4]:'')).join(' / ');
+  }
+  function commitPlotEdit(device,handle,values,previous,hadWrite=Boolean(automationTake)){
+    const {t,e}=device;
+    const message=plotStatus(device,handle,values);
+    if(!e||!live||!['Touch','Latch','Write'].includes(t.automation)){commit(previous,message);return;}
+    const initial=previous.tracks.find(row=>row.id===t.id)||previous.master;
+    const original=initial.fx.find(row=>row.id===e.id)?.params;
+    const changed=Object.entries(values).filter(([key,value])=>original?.[key]!==value);
+    if(!changed.length)return;
+    const at=positionAt(live);
+    for(const [key,value] of changed){
+      const name='fx:'+e.id+':'+key, id=writeKey(t,name);
+      extendWrite(at,id);beginWrite(t,name,value,at);
+      if(t.automation==='Touch'){automationTake.get(id).active=false;currentOverride.delete(id);}
+    }
+    // The drag previews base values before automation is written. Keep the pre-drag snapshot for Undo.
+    if(!hadWrite)automationSnapshot=previous;
+    if(t.automation==='Touch'&&![...automationTake.values()].some(row=>row.active)){finishWrite();rebuildPlayback();}
+    status(message+' · '+t.automation);
+  }
+  function editPlotHandle(handle,operation){
+    const device=stockDevice();
+    const point=device?.handles.find(row=>row.key===handle.dataset.plotHandle);
+    if(!point||isEditing())return;
+    const changes=Object.fromEntries(Object.entries(operation(device,point)).filter(([key,value])=>device.values[key]!==value));
+    if(!Object.keys(changes).length)return;
+    const previous=before();
+    if(device.e?.type==='Spectrum EQ')studioPlugin.band=point.key;
+    setPlotValues(device,changes);commitPlotEdit(device,point,changes,previous);focusDeviceHandle(point.key);
   }
   function bindStudioControls(){
     for(const [id,target] of [['close-plugin','plugin-dialog'],['close-spatial','spatial-dialog'],['close-key-report','keyscheme-report']]){
       $(id).onclick=()=>$(target).close();
     }
-    $('plugin-dialog').addEventListener('close',()=>{studioPlugin=null;nativePlugin=null;});
+    function cancelPlotDrag(){
+      if(!graphDrag)return;
+      const {device,previous,initial,changes}=graphDrag;
+      graphDrag=null;
+      if(!changes)return;
+      setPlotValues(device,Object.fromEntries(Object.keys(changes).map(key=>[key,initial[key]])));
+      if(!device.e)device.t.synth=previous.tracks.find(row=>row.id===device.t.id)?.synth;
+    }
+    $('plugin-dialog').addEventListener('close',()=>{
+      cancelPlotDrag();studioPlugin=null;nativePlugin=null;pluginProbe.clear();draggedPedal=null;
+    });
     $('spatial-dialog').addEventListener('close',()=>{studioSpatial=null;});
     panels.listen(document,'pointerdown',event=>{
       const handle=event.target.closest('.rotary'), pad=event.target.closest('[data-space-pad]');
       if(event.button!==0||isEditing())return;
+      const graphHandle=event.target.closest('[data-plot-handle]');
+      if(graphHandle){
+        const device=stockDevice(), point=device?.handles.find(row=>row.key===graphHandle.dataset.plotHandle);
+        if(!point)return;
+        const rect=graphHandle.closest('[data-device-plot]').getBoundingClientRect();
+        if(!rect.width||!rect.height)return;
+        graphDrag={device,point,rect,id:event.pointerId,x:event.clientX,y:event.clientY,
+          start:SW.handlePosition(device.mode,point,device.values,device.specs,pluginPlotOptions.range),
+          previous:before(),initial:{...device.values},hadWrite:Boolean(automationTake)};
+        graphHandle.focus({preventScroll:true});graphHandle.setPointerCapture?.(event.pointerId);
+        event.preventDefault();return;
+      }
       if(handle){
         const input=handle.closest('[data-dial]').querySelector('input');
         dialDrag={handle,y:event.clientY,value:Number(input.value),id:event.pointerId};
@@ -6648,6 +7251,18 @@ Object.assign(SW, (() => {
       }
     });
     panels.listen(window,'pointermove',event=>{
+      if(graphDrag?.id===event.pointerId&&studioPlugin){
+        const {device,point,rect,start,x,y,initial}=graphDrag;
+        const dx=event.clientX-x,dy=event.clientY-y;
+        if(!graphDrag.changes&&Math.hypot(dx,dy)<3)return;
+        const scale=event.shiftKey?.2:1;
+        const changes=SW.handleValues(device.mode,point,[start[0]+dx*scale/rect.width,start[1]+dy*scale/rect.height],
+          initial,device.specs,pluginPlotOptions.range);
+        if(!Object.keys(changes).length)return;
+        graphDrag.changes=changes;
+        setPlotValues(device,changes);
+        return;
+      }
       if(movingSource?.id===event.pointerId)moveSource(event);
       if(dialDrag?.id!==event.pointerId)return;
       const {handle,y,value}=dialDrag;
@@ -6657,6 +7272,18 @@ Object.assign(SW, (() => {
     });
     for(const type of ['pointerup','pointercancel']){
       panels.listen(window,type,event=>{
+        if(graphDrag?.id===event.pointerId){
+          const drag=graphDrag;
+          const {device,point,previous,initial,changes,hadWrite}=drag;
+          if(!studioPlugin||event.type==='pointercancel')cancelPlotDrag();
+          else{
+            if(device.e?.type==='Spectrum EQ')studioPlugin.band=point.key;
+            if(changes&&Object.entries(changes).some(([key,value])=>initial[key]!==value))commitPlotEdit(device,point,changes,previous,hadWrite);
+            else renderPlugin();
+            focusDeviceHandle(point.key);
+          }
+          graphDrag=null;return;
+        }
         if(movingSource?.id===event.pointerId){
           const {previous}=movingSource;movingSource=null;commit(previous,'Updated spatial position');
         }
@@ -6669,10 +7296,38 @@ Object.assign(SW, (() => {
       });
     }
     panels.listen(document,'dblclick',event=>{
+      const point=event.target.closest('[data-plot-handle]');
+      if(point){
+        editPlotHandle(point,(device,handle)=>Object.fromEntries([handle.x,handle.y].filter(Boolean).map(key=>[key,device.specs[key][2]])));
+        return;
+      }
       const handle=event.target.closest('.rotary');
       if(handle) knobNumeric(handle,Number(handle.dataset.reset),true);
     });
     panels.listen(document,'keydown',event=>{
+      const numeric=event.target.closest?.('[data-gear-value]');
+      if(numeric&&event.key==='Enter'&&numeric.value.trim()){
+        event.preventDefault();knobNumeric(numeric,Number(numeric.value),true);return;
+      }
+      const point=event.target.closest?.('[data-plot-handle]');
+      if(point&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(event.key)){
+        event.preventDefault();
+        if(['Enter',' '].includes(event.key)){
+          const device=stockDevice();
+          if(device?.e?.type==='Spectrum EQ'){studioPlugin.band=point.dataset.plotHandle;renderPlugin();focusDeviceHandle(studioPlugin.band);}
+          return;
+        }
+        editPlotHandle(point,(device,handle)=>{
+          const horizontal=event.key==='ArrowLeft'||event.key==='ArrowRight';
+          const key=horizontal?handle.x:handle.y||handle.q;
+          if(!key)return {};
+          const spec=device.specs[key],sign=event.key==='ArrowLeft'||event.key==='ArrowDown'?-1:1;
+          const value=spec[4]==='Hz'?device.values[key]*2**(sign*(event.shiftKey?1/3:1/24)):
+            device.values[key]+sign*spec[3]*(event.shiftKey?10:1);
+          return {[key]:clamp(Number(value.toFixed(spec[4]==='Hz'?0:6)),spec[0],spec[1])};
+        });
+        return;
+      }
       const hand=event.target.closest?.('.rotary');
       const arrow={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1};
       if(!hand||!arrow[event.key]&&!['Home','End'].includes(event.key))return;
@@ -6684,6 +7339,8 @@ Object.assign(SW, (() => {
     });
     panels.listen(document,'change',event=>{
       const el=event.target;
+      if(el.id==='eq-spectrum'){pluginPlotOptions.source=el.value;drawPluginAnalysis(true);return;}
+      if(el.id==='eq-display-range'){pluginPlotOptions.range=Number(el.value);refreshDevicePlot();return;}
       if(el.hasAttribute('data-gear-value')){
         if(el.value.trim()) knobNumeric(el,Number(el.value),true);
         else if(['mix','route','cue-output'].includes(el.dataset.gearKind))renderDock(false);
@@ -6698,6 +7355,29 @@ Object.assign(SW, (() => {
       }
       if(el.hasAttribute('data-monitor-mode'))edit(()=>{p.spatialMonitor=el.value;});
     });
+    const body=$('plugin-body');
+    body.addEventListener('wheel',event=>{
+      const point=event.target.closest('[data-plot-handle]');
+      if(!point||!event.deltaY||isEditing())return;
+      const device=stockDevice(), key=device?.handles.find(handle=>handle.key===point.dataset.plotHandle)?.q;
+      if(!key)return;
+      event.preventDefault();
+      editPlotHandle(point,({values,specs})=>({[key]:clamp(Number((values[key]-Math.sign(event.deltaY)*specs[key][3]).toFixed(3)),specs[key][0],specs[key][1])}));
+    },{passive:false});
+    body.addEventListener('dragstart',event=>{
+      const from=event.target.closest('[data-pedal-grab]')?.dataset.pedalGrab;
+      if(!from||event.target.closest('button')||isEditing())return;
+      draggedPedal=from;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',from);
+    });
+    body.addEventListener('dragover',event=>{
+      if(draggedPedal&&event.target.closest('[data-pedal]')){event.preventDefault();event.dataTransfer.dropEffect='move';}
+    });
+    body.addEventListener('drop',event=>{
+      const to=event.target.closest('[data-pedal]')?.dataset.pedal, device=stockDevice();
+      if(!to||!draggedPedal||device?.e?.type!=='Guitar Pedalboard'||isEditing())return;
+      event.preventDefault();const from=draggedPedal;draggedPedal=null;movePedal(device.e,from,to);
+    });
+    body.addEventListener('dragend',()=>{draggedPedal=null;});
   }
   function moveSource(event){
     const {pad,t}=movingSource,r=pad.getBoundingClientRect();
@@ -6713,45 +7393,25 @@ Object.assign(SW, (() => {
       if(live)SW.overrideParam(live.graph,t.id,'space:'+key,value);
     }
   }
-  const binLevels=new Uint8Array(128);
-  function drawPluginAnalysis(){
-    const canvas=$('plugin-response');
-    if(!canvas||!studioPlugin)return;
-    const track=channelById(studioPlugin.track), e=track?.fx.find(fx=>fx.id===studioPlugin.id);
-    if(!track||!e)return;
-    const graphic=canvas.getContext('2d');
-    if(!graphic)return;
-    const w=canvas.width,h=canvas.height;
-    graphic.fillStyle='#112031';graphic.fillRect(0,0,w,h);
-    graphic.strokeStyle='#273e54';graphic.lineWidth=1;graphic.beginPath();
-    for(let i=1;i<6;i++){graphic.moveTo(w*i/6,0);graphic.lineTo(w*i/6,h);}
-    for(let i=1;i<4;i++){graphic.moveTo(0,h*i/4);graphic.lineTo(w,h*i/4);}
-    graphic.stroke();
-    const node=live?.graph.tracks.get(track.id);
-    if(node?.analyzer){
-      node.analyzer.getByteFrequencyData(binLevels);
-      graphic.fillStyle='#83c9eb36';graphic.beginPath();graphic.moveTo(0,h);
-      for(let i=0;i<binLevels.length;i++)graphic.lineTo(w*Math.log1p(i)/Math.log(binLevels.length),h-h*.87*binLevels[i]/255);
-      graphic.lineTo(w,h);graphic.closePath();graphic.fill();
+  function drawPluginAnalysis(force=false){
+    const canvas=$('plugin-response'), device=canvas&&stockDevice();
+    if(!device)return;
+    const now=performance.now();
+    if(!force&&now-pluginPaintTime<34)return;
+    pluginPaintTime=now;
+    const graph=live?.graph||monitorGraph||previewGraph;
+    const signal=pluginProbe.read(graph,device.t.id,device.e);
+    SW.paintPluginPlot(canvas,device.mode,device.e,device.values,device.specs,signal,
+      {...pluginPlotOptions,sampleRate:ctx?.sampleRate||48000});
+    const reduction=$('plugin-reduction'), compressor=signal?.processor?.reduction;
+    if(reduction)reduction.value=Number.isFinite(compressor?.reduction)?fmt(-compressor.reduction,1)+' dB GR':'— dB GR';
+    const output=$('plugin-meter');
+    if(output&&device.e){
+      let peak=0;
+      for(const sample of signal?.left||[])peak=Math.max(peak,Math.abs(sample));
+      for(const sample of signal?.stereoRight?signal.right:[])peak=Math.max(peak,Math.abs(sample));
+      output.value=peak?fmt(20*Math.log10(peak),1)+' dBFS':'— dBFS';
     }
-    const processor=node?.processors?.get(e.id);
-    const biquads=processor?.filters||[];
-    if(biquads.length&&!e.bypass){
-      const freq=Float32Array.from({length:96},(_,i)=>20*900**(i/95));
-      const mag=new Float32Array(96),phase=new Float32Array(96),combined=new Float32Array(96).fill(0);
-      for(const filter of biquads){
-        filter.getFrequencyResponse(freq,mag,phase);
-        for(let i=0;i<mag.length;i++)combined[i]+=20*Math.log10(Math.max(.001,mag[i]));
-      }
-      graphic.beginPath();
-      for(let i=0;i<combined.length;i++){
-        const x=w*i/(combined.length-1),y=h*.5-clamp(combined[i],-30,30)*h/62;
-        if(i===0)graphic.moveTo(x,y);else graphic.lineTo(x,y);
-      }
-      graphic.strokeStyle='#8bf2d5';graphic.lineWidth=2;graphic.stroke();
-    }
-    const meter=$('plugin-reduction');
-    if(meter)meter.value=Number.isFinite(processor?.reduction?.reduction)?fmt(-processor.reduction.reduction,1)+' dB GR':'— dB GR';
   }
   let nativePlugin=null;
   async function openNative(key){
@@ -6884,7 +7544,7 @@ Object.assign(SW, (() => {
         <strong>${spec.label}</strong>${button('global-add','Add','Add '+spec.entry+' at the playhead','data-kind="'+kind+'"')}</div>
         <div class="global-lane" data-global-lane="${kind}" aria-label="${spec.label} lane" style="--lane-ink:${spec.color}">${entries.map(item=>{
         const size=item.length?'width:'+item.length*zoom+'px':'';
-        return `<button type="button" class="global-event ${spec.length?'span-event':'point-event'}" data-global-kind="${kind}" data-global-id="${item.id}"${kind==='markers'?' data-marker="'+item.id+'"':''}
+        return `<button type="button" class="global-event ${spec.length?'span-event':'point-event'}${editorFocus?.kind==='global'&&editorFocus.id===item.id?' is-selected':''}" data-global-kind="${kind}" data-global-id="${item.id}"${kind==='markers'?' data-marker="'+item.id+'"':''}
           style="left:${item.at*zoom}px;${size}" title="${esc(item.name+' · '+SW.locatorText(item.at,p.meter))}"><span>${esc(item.name)}</span>${spec.length?'<i data-global-edge="left"></i><i data-global-edge="right"></i>':''}</button>`;
       }).join('')}<span class="playline"></span></div>`;
     }).join('');
@@ -6951,7 +7611,8 @@ Object.assign(SW, (() => {
     return next;
   }
   function deleteGlobalItem(kind,item){
-    if(isEditing())return;
+    if(isEditing()||!item)return;
+    if(editorFocus?.kind==='global'&&editorFocus.lane===kind&&editorFocus.id===item.id)editorFocus={kind:'global',lane:kind};
     edit(()=>{
       const items=SW.globalEntries(p,kind).filter(row=>row!==item);
       if(kind==='markers')p.markers=items;
@@ -7001,6 +7662,8 @@ Object.assign(SW, (() => {
       return true;
     }
     const kind=lane.dataset.globalLane, spec=globalKinds[kind], item=el&&globalItem(kind,el.dataset.globalId);
+    setEditorFocus({kind:'global',lane:kind,id:item?.id});
+    el?.focus({preventScroll:true});
     const at=item?.at??timelineBeat(lane,{clientX:x});
     globalContext={kind,at,id:item?.id};
     const rows=item?[['@global-edit','Edit '+spec.entry.toLowerCase()+'…'],['@global-locate','Locate'],
@@ -7049,6 +7712,7 @@ Object.assign(SW, (() => {
     }else{
       const kind=el.dataset.globalKind,item=globalItem(kind,el.dataset.globalId);
       if(!item)return false;
+      setEditorFocus({kind:'global',lane:kind,id:item.id});
       const lane=el.closest('[data-global-lane]');
       el.focus({preventScroll:true});el.setPointerCapture?.(event.pointerId);
       gesture={...common,kind:'global-event',which:kind,el,item,lane,anchor:timelineBeat(lane,event),mode:target.dataset.globalEdge||'move'};
@@ -7082,7 +7746,7 @@ Object.assign(SW, (() => {
         noDoubleBefore=performance.now()+230;
         const entry=saveGlobalItem(g.which,{...g.item,...g.value},g.item.id);
         find('[data-global-id="'+entry.id+'"]')?.focus({preventScroll:true});
-      }
+      }else seek(g.item.at);
       return true;
     }
     return false;
@@ -7295,7 +7959,7 @@ Object.assign(SW, (() => {
         if(output)output.value=peak>0?'Peak '+fmt(20*Math.log10(peak),1):'Peak —';
       }
       if(tab==='routing')setGraphActivity(id,max);
-      if(studioPlugin?.track===id&&$('plugin-meter'))$('plugin-meter').value=max>0?fmt(20*Math.log10(max),1)+' dBFS':'— dBFS';
+      if(studioPlugin?.type==='inst'&&studioPlugin.track===id&&$('plugin-meter'))$('plugin-meter').value=max>0?fmt(20*Math.log10(max),1)+' dBFS':'— dBFS';
     }
     if(tab==='routing'){
       for(const cue of SW.cueSettings(p)){
@@ -7336,7 +8000,7 @@ Object.assign(SW, (() => {
     }
     if(!previewGraph||!previewGraph.tracks.has(t.id)){
       stopPreview();
-      previewGraph=SW.buildGraph(ctx,{...p,tracks:p.tracks.map(row=>({...row,solo:row.id===t.id,mute:false})),master:{...p.master,mute:false}});
+      previewGraph=SW.buildGraph(ctx,{...p,tracks:p.tracks.map(row=>({...row,solo:row.id===t.id,mute:false})),master:{...p.master,mute:false}},true);
     }
     SW.voice(previewGraph,t,pitch,velocity,ctx.currentTime+.013,.29,media);previewMeters();
     clearTimeout(previewTimer);previewTimer=setTimeout(stopPreview,1100);
@@ -8255,7 +8919,7 @@ Object.assign(SW, (() => {
       automationTake.get(id).last=at;
       setLaneValue(t,key,val);
     }else setLaneValue(t,key,val);
-    if(live||monitorGraph)SW.overrideParam(live?.graph||monitorGraph,t.id,key,val);
+    if(live||monitorGraph||previewGraph?.tracks)SW.overrideParam(live?.graph||monitorGraph||previewGraph,t.id,key,val);
     if(['volume','pan','trim'].includes(key)){
       for(const peer of all('[data-owner="'+t.id+'"][data-param="'+key+'"]')){
         if(peer!==el)peer.value=fmt(val,4);
@@ -8442,7 +9106,7 @@ Object.assign(SW, (() => {
     if(event.button!==0||isEditing()) return;
     const target=event.target, eventEl=target.closest('[data-clip]');
     const lane=target.closest('[data-lane]'), envelope=target.closest('[data-envelope]');
-    const focus=readEditorFocus(target);if(focus)editorFocus=focus;
+    const focus=readEditorFocus(target);if(focus)setEditorFocus(focus);
     const t=p.tracks.find(row=>row.id===lane?.dataset.lane);
     const additive=event.ctrlKey||event.metaKey;
     syncToolModifier(event);
@@ -8792,7 +9456,11 @@ Object.assign(SW, (() => {
     ...Object.fromEntries(Object.entries(toolsList).map(([id,label],i)=>['tool-'+id,[label+' tool',String(i+1)]]))
   };
   let keyMap=readSettings('sw-keymap',{}), keyAliases=readSettings('sw-keymap-aliases',{}), rebinding=null, keyImportReport=null;
-  const commandKey=id=>Object.hasOwn(keyMap,id)?keyMap[id]:commandList[id][1];
+  function commandKey(id){
+    if(id==='delete')return 'Delete';
+    const key=Object.hasOwn(keyMap,id)?keyMap[id]:commandList[id][1];
+    return key==='Delete'?commandList[id][1]:key;
+  }
   function keyChord(event){
     let key=event.key;
     if(key===' ') key='Space';
@@ -8808,11 +9476,12 @@ Object.assign(SW, (() => {
     $('insert-track').title='Insert Track'+(commandKey('insert-track')?' ('+commandKey('insert-track')+')':'');
     const query=$('command-search').value.trim().toLowerCase();
     $('commands').innerHTML=Object.entries(commandList).filter(([id,[name]])=>!query||(name+' '+commandKey(id)).toLowerCase().includes(query)).map(([id,[name]])=>
-      '<div class="command-row"><button type="button" data-cmd="'+id+'">'+esc(name)+'</button><kbd>'+esc([commandKey(id),...(keyAliases[id]||[])].filter(Boolean).join(' / ')||'—')+'</kbd><button class="bind-key" type="button" data-bind="'+id+'">'+(rebinding===id?'Press shortcut…':'Change')+'</button></div>'
+      '<div class="command-row"><button type="button" data-cmd="'+id+'">'+esc(name)+'</button><kbd>'+esc([commandKey(id),...(keyAliases[id]||[]).filter(key=>key!=='Delete')].filter(Boolean).join(' / ')||'—')+'</kbd><button class="bind-key" type="button" data-bind="'+id+'"'+(id==='delete'?' disabled title="Delete is reserved for the focused item"':'')+'>'+(rebinding===id?'Press shortcut…':'Change')+'</button></div>'
     ).join('');
   }
   function command(id,target){
     if(!Object.hasOwn(commandList,id)) return;
+    if(id==='delete'&&target?.closest?.('#context-menu'))target=contextFocus;
     hideContext();
     const modal=$('command-dialog');
     if(modal.open&&id!=='find') modal.close();
@@ -8891,7 +9560,7 @@ Object.assign(SW, (() => {
       if(reference.visible())reference.hide();
       setTool('arrow');setTab(prefs.initialPanel==='browser'?'mixer':prefs.initialPanel);if(prefs.initialPanel==='browser')setTab('browser');$('arrange-scroll').focus();return;
     }
-    if(id==='about'){alert('Sonoravell Studio 1.0.0\nBrowser-based audio and MIDI workstation');return;}
+    if(id==='about'){alert('Sonoravell Studio 1.0.1\nBrowser-based audio and MIDI workstation');return;}
     if(id==='online-reference'||id==='workflow-tutorial'){
       window.open(id==='online-reference'?'https://www.fender.com/pages/fender-studio-pro-specs-resources':'https://www.youtube.com/watch?v=NrYnI-r1cdI','_blank','noopener');return;
     }
@@ -8931,6 +9600,7 @@ Object.assign(SW, (() => {
     if(eventCommand(id))return;
     if(id.startsWith('tool-')){setTool(id.slice(5));return;}
     if(id==='clear-selection'){
+      if(editorFocus?.kind==='global'){$('arrange-scroll').focus();setEditorFocus({kind:'events'});}
       editRange=null;picked.clear();notePicked.clear();clipId=null;noteId=null;render();return;
     }
     if(['all','select-track','select-muted','invert-selection'].includes(id)){
@@ -8938,7 +9608,7 @@ Object.assign(SW, (() => {
       selectMany(allClips().filter(({t,c})=>id==='all'||id==='select-track'&&t.id===trackId||id==='select-muted'&&c.muted||id==='invert-selection'&&!previous.has(c.id)));return;
     }
     if(id==='delete'){
-      if(target&&deleteFocused(target))return;
+      if(isEditing()||deleteFocused(target))return;
       if(editRange) editRangeAction('delete-range');
       else removeSelected();
       return;
@@ -9111,7 +9781,7 @@ Object.assign(SW, (() => {
       const action=id.startsWith('@'), key=action?id.slice(1):id;
       const keyboardCommand={'note-cut':'cut','note-copy':'copy','note-paste':'paste','note-paste-original':'paste-original',
         'note-duplicate':'repeat','note-delete':'delete','note-quantize':'quantize','note-all':'all',
-        'note-invert-selection':'invert-selection','note-mute':'mute-event'}[key]||key;
+        'note-invert-selection':'invert-selection','note-mute':'mute-event','global-delete':'delete'}[key]||key;
       const shortcut=Object.hasOwn(commandList,keyboardCommand)?commandKey(keyboardCommand):'';
       return '<button type="button" '+(action?'data-action':'data-cmd')+'="'+key+'"><span class="context-icon" aria-hidden="true">'+
         (menuGlyphs[key]||globalKinds[key.slice(12)]?.glyph||'◇')+'</span><span>'+esc(label)+'</span>'+
@@ -9224,13 +9894,30 @@ Object.assign(SW, (() => {
         if(['Control','Alt','Meta','Shift'].includes(event.key)) return;
         event.preventDefault();
         if(event.key==='Escape'){rebinding=null;commandRows();return;}
+        if(chord==='Delete'){status('Delete is reserved for the focused item.',true);return;}
         const old=Object.keys(commandList).find(id=>id!==rebinding&&commandKey(id)===chord);
         if(old) keyMap[old]='';
         delete keyAliases[rebinding];
         for(const id of Object.keys(keyAliases))keyAliases[id]=keyAliases[id].filter(key=>key!==chord);
         keyMap[rebinding]=chord;rebinding=null;remember('sw-keymap',keyMap);remember('sw-keymap-aliases',keyAliases);commandRows();return;
       }
-      if(document.querySelector('dialog[open]')||editing||target.closest?.('.rotary')&&/^(Arrow|Home$|End$)/.test(event.key)) return;
+      if(editing||target.closest?.('.rotary')&&/^(Arrow|Home$|End$)/.test(event.key)) return;
+      const dialog=document.querySelector('dialog[open]');
+      if(dialog){
+        if(dialog.id==='plugin-dialog'&&!graphDrag&&!dialDrag&&['Ctrl+Z','Ctrl+Shift+Z','Ctrl+Y'].includes(chord)){
+          event.preventDefault();undoEdit(chord!=='Ctrl+Z');return;
+        }
+        if(chord==='Delete'&&target.closest?.('[data-action="macro-delete"]')){
+          event.preventDefault();doAction(target.closest('[data-action="macro-delete"]'));
+        }
+        return;
+      }
+      if(chord==='Delete'){
+        event.preventDefault();
+        if(dockOpen&&tab==='routing'&&target.closest?.('#lower-workspace')&&patchPanel.key(event,true))return;
+        command('delete',target);
+        return;
+      }
       const id=Object.keys(commandList).find(key=>commandKey(key)===chord)||
         Object.keys(commandList).find(key=>keyAliases[key]?.includes(chord));
       if(!id&&(chord==='Ctrl+Z'||chord==='Ctrl+Shift+Z')){event.preventDefault();undoEdit(chord==='Ctrl+Shift+Z');return;}
@@ -9277,36 +9964,53 @@ Object.assign(SW, (() => {
     return !target.closest?.('.inspector,#browser-workspace,.transport,#context-menu,.studio-menu,.studio-menu-popup')&&
       (!target.closest?.('#lower-workspace')||['edit','automation'].includes(tab));
   }
+  const focusedRemoval=[
+    ['[data-send]','send-remove'],['[data-cue-route]','cue-remove'],
+    ['[data-legacy-send]','legacy-send-remove'],['[data-asset]','remove-asset'],
+    ['[data-inline-cue]','cue-delete']
+  ];
   function deleteFocused(target){
-    const el=target.closest?.('[data-point],[data-expression-delete],[data-expression-index],[data-fx],[data-send],[data-cue-route],[data-legacy-send],[data-global-id],[data-asset],[data-note],[data-clip]');
-    if(el){
-      const {dataset:d}=el;
-      if(d.point!==undefined){
-        const points=currentTrack().lanes[autoKey], index=Number(d.point);
-        if(points?.[index])edit(()=>points.splice(index,1),'Removed automation point');
-      }else if(d.expressionDelete!==undefined||d.expressionIndex!==undefined){
-        const part=editorClip(),lane=part?.expression?.[expressionKey],index=Number(d.expressionDelete??d.expressionIndex);
-        if(!part?.locked&&lane?.[index])edit(()=>lane.splice(index,1),'Removed MIDI automation point');
-      }else if(d.globalId){
-        const item=globalItem(d.globalKind,d.globalId);
-        if(item)deleteGlobalItem(d.globalKind,item);
-      }else if(d.note){
-        if(!notePicked.has(d.note)){noteId=d.note;notePicked=new Set([d.note]);}
-        noteClipboardAction('note-delete');
-      }else if(d.clip){
-        if(editRange){editRangeAction('delete-range');return true;}
-        const row=foundClip(d.clip);
-        if(row&&!selectedClips().some(({c})=>c===row.c))selectClip(row.t,row.c,false);
-        removeSelected();
-      }else{
-        const action=d.fx?'fx-remove':d.asset?'remove-asset':d.cueRoute!==undefined?'cue-remove':
-          d.send!==undefined?'send-remove':'legacy-send-remove';
-        doAction({dataset:{action},closest:selector=>el.closest(selector)});
-      }
+    const action=target?.closest?.('[data-action]');
+    if(['delete-scene','cue-delete','clear-lane','macro-delete'].includes(action?.dataset.action)){
+      doAction(action);return true;
+    }
+    for(const [selector,action] of focusedRemoval){
+      const el=target?.closest?.(selector);
+      if(!el)continue;
+      doAction({dataset:{action},closest:selector=>el.closest(selector)});
       return true;
     }
-    return Boolean(target.closest?.('.track-head,.console-strip,.inspector,#browser-workspace,#context-menu')||
-      target.closest?.('#lower-workspace')&&['routing','mixer'].includes(tab));
+    const direct=readEditorFocus(target);
+    if(!direct&&(target?.closest?.('#browser-workspace,#lower-workspace,#context-menu,.transport,[data-loop-editor]')))return true;
+    const scope=clipboardScope(target);
+    switch(scope.kind){
+      case 'global': {
+        if(scope.id&&visibleGlobals.has(scope.lane))deleteGlobalItem(scope.lane,globalItem(scope.lane,scope.id));
+        return true;
+      }
+      case 'notes':
+        includeFocusedNote(scope);noteClipboardAction('note-delete');return true;
+      case 'expression':case 'automation': {
+        const expression=scope.kind==='expression', owner=expression?foundClip(scope.clip)?.c:channelById(scope.track);
+        const points=expression?owner?.expression?.[scope.lane]:owner?.lanes?.[scope.lane];
+        const index=points?.findIndex(point=>point.at===scope.at)??-1;
+        if(index>=0&&!owner.locked){
+          editorFocus={...scope,at:undefined};
+          edit(()=>points.splice(index,1),expression?'Removed MIDI controller point':'Removed automation point');
+        }
+        return true;
+      }
+      case 'insert': {
+        const track=channelById(scope.track), insert=track?.fx.find(e=>e.id===scope.id);
+        if(insert){editorFocus={kind:'insert',track:track.id};edit(()=>SW.removeEffect(track,insert.id),track.name+' · Removed '+insert.type);}
+        return true;
+      }
+    }
+    // A channel header is never an implicit request to remove a track or its events.
+    if(target?.closest?.('.track-head,.console-strip,[data-track]:not([data-lane])')&&!target.closest('[data-clip]'))return true;
+    const event=target?.closest?.('[data-clip]'), row=event&&foundClip(event.dataset.clip);
+    if(row&&!editRange&&!selectedClips().some(({c})=>c===row.c))selectClip(row.t,row.c,false);
+    return false;
   }
   function setSessionControl(id,fn,restart=true){
     $(id).addEventListener('change',()=>{
@@ -9427,7 +10131,7 @@ Object.assign(SW, (() => {
       const cmd=target.closest('[data-cmd]'), bind=target.closest('[data-bind]');
       if(!target.closest('#context-menu')&&target.id!=='global-tracks')hideContext();
       const focus=readEditorFocus(target);
-      if(focus)editorFocus=focus;
+      if(focus)setEditorFocus(focus);
       if(expressionClick(event))return;
       if(cmd){
         const row=cmd.closest('.edit-controls-inside')&&editorRow();
@@ -9532,7 +10236,7 @@ Object.assign(SW, (() => {
       if(t.dataset.param&&!t.hasAttribute('data-gear-value')) changeParam(t,true);
     });
     panels.listen(document,'input',event=>{
-      if(event.target.dataset.param) changeParam(event.target,false);
+      if(event.target.dataset.param&&!event.target.hasAttribute('data-gear-value'))changeParam(event.target,false);
       if(event.target.id==='browser-search'&&browserOpen){
         browserQuery=event.target.value;$('browser-results').innerHTML=browserResults();
       }
@@ -9569,7 +10273,7 @@ Object.assign(SW, (() => {
       applyBrowserItem(item.kind,item.name,SW.findTrack(p,row.dataset.track),false,{strict:true});
     }));
     panels.listen(document,'focusin',event=>{
-      const focus=readEditorFocus(event.target);if(focus)editorFocus=focus;
+      const focus=readEditorFocus(event.target);if(focus)setEditorFocus(focus);
     });
     panels.listen(document,'pointerdown',startGesture);
     panels.listen(window,'pointermove',moveGesture);
@@ -9992,6 +10696,15 @@ Object.assign(SW, (() => {
     if(id==='fullscreen') return Boolean(document.fullscreenElement||document.documentElement?.requestFullscreen);
     if(['track-duplicate','track-remove','track-remove-complete','track-solo','track-arm'].includes(id))
       return !restricted&&trackId!=='master'&&(id!=='track-arm'||['audio','midi'].includes(currentTrack().type));
+    if(id==='delete'){
+      if(restricted)return false;
+      const scope=clipboardScope();
+      if(scope.kind==='global')return Boolean(scope.id&&visibleGlobals.has(scope.lane)&&globalItem(scope.lane,scope.id));
+      if(scope.kind==='insert')return Boolean(channelById(scope.track)?.fx.some(e=>e.id===scope.id));
+      if(scope.kind==='automation'||scope.kind==='expression')return scope.at!==undefined;
+      if(scope.kind==='notes')return Boolean(noteId||notePicked.size||scope.id);
+      return Boolean(editRange||selectedClips().length);
+    }
     if(['paste','paste-original','copy','cut'].includes(id)){
       const scope=clipboardScope(), paste=id.startsWith('paste');
       if(restricted)return false;
@@ -9999,8 +10712,8 @@ Object.assign(SW, (() => {
       if(scope.kind!=='events')return paste?focusedClipboard.has(scope.kind):Boolean(scope.id||scope.at!==undefined);
       return paste?Boolean(multiClipboard.length):Boolean(editRange||selectedClips().length);
     }
-    if(['cut','copy','delete','split','duplicate','repeat','merge','quantize','align','mute-event','lock-event','nudge-left','nudge-right'].includes(id))
-      return !restricted&&(selectedClips().length>0||Boolean(editRange)||id==='delete'&&Boolean(noteId||notePicked.size));
+    if(['split','duplicate','repeat','merge','quantize','align','mute-event','lock-event','nudge-left','nudge-right'].includes(id))
+      return !restricted&&(selectedClips().length>0||Boolean(editRange));
     if(['normalize','reverse','detect-stops','fade-both','crossfade','reset-fades','slip-left','slip-right'].includes(id))
       return !restricted&&selectedClips().some(({c})=>c.type==='audio');
     if(['split-range','trim-range','delete-time','range-loop'].includes(id)) return !restricted&&Boolean(selectionRange());
