@@ -33,7 +33,7 @@ class Element {
 const sources=path.resolve(__dirname,'../src')+path.sep, html=fs.readFileSync(sources+'index.html','utf8');
 const elements=Object.fromEntries([...html.matchAll(/ id="([a-z-]+)"/g)].map(([,id])=>[id,new Element(id)]));
 const get=id=>elements[id]||null;
-const prefs=new Map(),documentHandlers=new Map();
+const prefs=new Map([['sw-keymap',JSON.stringify({'track-remove':'Delete',delete:''})]]),documentHandlers=new Map();
 const document={
   getElementById:get,querySelectorAll(){return [];},querySelector(){return null;},
   addEventListener(type,handler){
@@ -49,11 +49,11 @@ const context=vm.createContext({
   localStorage:{getItem:k=>prefs.get(k),setItem:(k,v)=>prefs.set(k,v)},setTimeout:()=>0,clearTimeout(){},
   confirm:()=>true,prompt:()=>null,requestAnimationFrame:()=>1,cancelAnimationFrame(){},setInterval:()=>1,clearInterval(){}
 });
-for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions']){
+for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions']){
   vm.runInContext(fs.readFileSync(sources+source+'.js','utf8'),context,{filename:source+'.js'});
 }
 const app=fs.readFileSync(sources+'app.js','utf8').replace("if(prefs.startup==='restore') restore();",
-  'globalThis.probe={setTab,chooseNotes,driveClipboard,setNoteProperty,editNotes,showGlobalLane,openGlobalEntry,trackHeight,startGesture,moveGesture,finishGesture,zoom:()=>zoom,ensureAudio,enableAudioMonitor,toggleMonitor,insertTracks,canUseSnap,changeParam,getSnap:()=>snap,selectTrack,selectedClips,editorClip,openTrackMenu,syncToolModifier,removeTracks,beginRecord,finishAudioTake,stopAction,stopRecording,midiInputStart,midiInputStop,registerAsset,seek,recorder:()=>recorder,getMedia:()=>media,command,selectMany,doAction,changeValue,openObjectMenu,applyMacroToSelection,knobNumeric,resizeDockView,position:()=>playhead,allClips,renderKeys,setKeyboard,applyBrowserItem,pluginOpen,spatialOpen,getProject:()=>p,getPreferences:()=>prefs};');
+  'globalThis.probe={setTab,chooseNotes,driveClipboard,setNoteProperty,editNotes,showGlobalLane,openGlobalEntry,saveGlobalItem,trackHeight,startGesture,moveGesture,finishGesture,zoom:()=>zoom,ensureAudio,enableAudioMonitor,toggleMonitor,insertTracks,canUseSnap,changeParam,getSnap:()=>snap,selectTrack,selectedClips,editorClip,openTrackMenu,syncToolModifier,removeTracks,beginRecord,finishAudioTake,stopAction,stopRecording,midiInputStart,midiInputStop,registerAsset,seek,recorder:()=>recorder,getMedia:()=>media,command,selectMany,doAction,changeValue,openObjectMenu,applyMacroToSelection,knobNumeric,resizeDockView,position:()=>playhead,allClips,renderKeys,setKeyboard,applyBrowserItem,pluginOpen,spatialOpen,getProject:()=>p,getPreferences:()=>prefs};');
 vm.runInContext(app,context,{filename:'app.js'});
 const probe=context.probe;
 assert.equal(document.title,'After Hours — Sonoravell Studio');
@@ -527,6 +527,16 @@ function verifyTimelineControls(){
   assert.equal(probe.getProject().globalTracks.lyrics.length,0);
   probe.command('undo');
   assert.equal(probe.getProject().globalTracks.lyrics[0].id,lyric.id);
+
+  const marker=probe.saveGlobalItem('markers',{at:6,name:'Delete me'});
+  const markerNode=Object.assign(new Element(),{dataset:{globalKind:'markers',globalId:marker.id}});
+  for(const handler of documentHandlers.get('focusin'))handler({target:markerNode});
+  const tracks=probe.getProject().tracks.length;
+  press(document.body,'Delete');
+  assert.ok(!probe.getProject().markers.some(entry=>entry.id===marker.id),'Delete targets the selected marker after focus loss');
+  assert.equal(probe.getProject().tracks.length,tracks,'an imported track binding cannot take over Delete');
+  probe.command('undo');
+  assert.ok(probe.getProject().markers.some(entry=>entry.id===marker.id));
 
   const p=probe.getProject(), initial=p.loopEnd, surface=new Element();
   surface.closest=sel=>sel==='[data-loop-editor]'?surface:null;
