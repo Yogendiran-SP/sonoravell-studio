@@ -23,6 +23,37 @@ Object.assign(SW, (() => {
     return cache[kind]=buffer;
   }
   const direct=n=>n;
+  const filterTypes={'Parametric EQ':'peaking','Low Cut':'highpass','Low Pass':'lowpass',
+    'High Shelf':'highshelf','Low Shelf':'lowshelf','Band Pass':'bandpass',Notch:'notch'};
+  function filterStages(e){
+    if(Object.hasOwn(filterTypes,e.type)){
+      return [{type:filterTypes[e.type],frequency:'frequency',gain:'gain' in e.params?'gain':undefined,
+        Q:'q' in e.params?'q':undefined}];
+    }
+    if(e.type==='Spectrum EQ'){
+      return SW.spectrumBands.filter(([key])=>e.params[key+'On']).map(([key,,type])=>({
+        type,frequency:key+'Freq',gain:key+'Gain' in e.params?key+'Gain':undefined,Q:key+'Q' in e.params?key+'Q':undefined
+      }));
+    }
+    if(e.type==='Three-Band EQ')return [
+      {type:'lowshelf',frequency:160,gain:'low'},{type:'peaking',frequency:'frequency',Q:.8,gain:'mid'},
+      {type:'highshelf',frequency:6000,gain:'high'}
+    ];
+    if(e.type==='Cabinet Filter')return [
+      {type:'highpass',frequency:'low'},{type:'peaking',frequency:2100,Q:.8,gain:'presence'},
+      {type:'lowpass',frequency:'high'}
+    ];
+    return [];
+  }
+  function configureFilter(node,stage,link){
+    node.type=stage.type;
+    for(const key of ['frequency','gain','Q']){
+      const source=stage[key];
+      if(typeof source==='string')link(source,node[key]);
+      else if(typeof source==='number')node[key].value=source;
+    }
+    return node;
+  }
   function insert(ctx,e,units){
     let input,output,reduction=null,filters=[];
     const params={};
@@ -35,12 +66,26 @@ Object.assign(SW, (() => {
       link('mix',dry.gain,v=>1-v);link('mix',wet.gain);
     };
     switch(e.type){
-      case 'Parametric EQ': case 'Low Cut': case 'Low Pass': case 'High Shelf': case 'Low Shelf': case 'Band Pass': case 'Notch': {
-        input=output=ctx.createBiquadFilter();filters=[input];
-        input.type={'Parametric EQ':'peaking','Low Cut':'highpass','Low Pass':'lowpass','High Shelf':'highshelf','Low Shelf':'lowshelf','Band Pass':'bandpass',Notch:'notch'}[e.type];
-        link('frequency',input.frequency);
-        if('q' in e.params) link('q',input.Q);
-        if('gain' in e.params) link('gain',input.gain);
+      case 'Parametric EQ': case 'Low Cut': case 'Low Pass': case 'High Shelf': case 'Low Shelf': case 'Band Pass':
+      case 'Notch': case 'Three-Band EQ': case 'Cabinet Filter': case 'Spectrum EQ': {
+        filters=filterStages(e).map(stage=>configureFilter(ctx.createBiquadFilter(),stage,link));
+        for(let i=1;i<filters.length;i++)filters[i-1].connect(filters[i]);
+        input=filters[0]||ctx.createGain();output=filters.at(-1)||input;
+        if(e.type==='Spectrum EQ'){
+          const level=ctx.createGain();
+          output.connect(level);output=level;link('output',level.gain,db);
+        }
+        break;
+      }
+      case 'Guitar Pedalboard': {
+        input=output=ctx.createGain();
+        for(const [stage,type] of SW.pedalOrder(e)){
+          if(!e.params[stage+'On'])continue;
+          const values=Object.fromEntries(Object.keys(SW.fx[type]).map(key=>[key,e.params[stage+'_'+key]]));
+          const child=insert(ctx,{type,params:values},units);
+          output.connect(child.input);output=child.output;
+          for(const [key,targets] of Object.entries(child.params))params[stage+'_'+key]=targets;
+        }
         break;
       }
       case 'Compressor': case 'Limiter': case 'Parallel Compressor': {
@@ -95,21 +140,6 @@ Object.assign(SW, (() => {
           const gain=ctx.createGain();
           split.connect(gain,src);gain.connect(output,0,dst);
           link('width',gain.gain,v=>src===dst?(1+v)/2:(1-v)/2);
-        }
-        break;
-      }
-      case 'Three-Band EQ': case 'Cabinet Filter': {
-        const low=ctx.createBiquadFilter(), mid=ctx.createBiquadFilter(), high=ctx.createBiquadFilter();
-        input=low;output=high;filters=[low,mid,high];
-        low.connect(mid).connect(high);
-        mid.type='peaking';mid.Q.value=.8;
-        if(e.type==='Three-Band EQ'){
-          low.type='lowshelf';low.frequency.value=160;
-          high.type='highshelf';high.frequency.value=6000;
-          link('low',low.gain);link('mid',mid.gain);link('high',high.gain);link('frequency',mid.frequency);
-        }else{
-          low.type='highpass';high.type='lowpass';mid.frequency.value=2100;
-          link('low',low.frequency);link('high',high.frequency);link('presence',mid.gain);
         }
         break;
       }
@@ -263,7 +293,8 @@ Object.assign(SW, (() => {
       for(const e of t.fx){
         if(e.bypass){
           const passthrough=ctx.createGain();
-          points.set('fx:'+e.id,{input:passthrough,output:passthrough});
+          const node={input:passthrough,output:passthrough};
+          points.set('fx:'+e.id,node);processors.set(e.id,node);
           continue;
         }
         const node=insert(ctx,e,units);
@@ -677,5 +708,5 @@ Object.assign(SW, (() => {
       if(ctx.state!=='closed') await ctx.close();
     }
   }
-  return {audioContext,buildGraph,schedule,renderAudio,voice,overrideParam,audibility,renderRealtime};
+  return {audioContext,buildGraph,schedule,renderAudio,voice,overrideParam,audibility,renderRealtime,filterStages,configureFilter};
 })());

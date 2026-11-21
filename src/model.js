@@ -37,6 +37,43 @@ Object.assign(SW, (() => {
     'Polarity': {gain:[-1,1,-1,2,'']},
     'Utility Gain': {gain:[-48,18,0,.1,'dB']}
   };
+  const spectrumBands = [
+    ['lc','Low cut','highpass',35,'#efae76'],
+    ['ls','Low shelf','lowshelf',105,'#f8cb7e'],
+    ['lm','Low mid','peaking',280,'#cddd80'],
+    ['mid','Mid','peaking',1050,'#83dfbe'],
+    ['hm','High mid','peaking',3300,'#80c5f5'],
+    ['hs','High shelf','highshelf',8000,'#a4b6ff'],
+    ['hc','High cut','lowpass',16000,'#d2a9ef']
+  ];
+  const pedalStages = [
+    ['level','Utility Gain'],['drive','Drive'],['cab','Cabinet Filter'],['chorus','Chorus'],
+    ['trem','Tremolo'],['echo','Echo'],['room','Room Reverb'],['comp','Compressor']
+  ];
+  const spectrumSpec=fx['Spectrum EQ']={};
+  for(const [key,,type,frequency] of spectrumBands){
+    spectrumSpec[key+'On']=[0,1,type==='highpass'||type==='lowpass'?0:1,1,''];
+    spectrumSpec[key+'Freq']=[20,20000,frequency,1,'Hz'];
+    if(['highpass','lowpass','peaking'].includes(type))spectrumSpec[key+'Q']=[.1,18,type==='peaking'?1:.7,.1,'Q'];
+    if(!['highpass','lowpass'].includes(type))spectrumSpec[key+'Gain']=[-24,24,0,.1,'dB'];
+  }
+  spectrumSpec.output=[-24,18,0,.1,'dB'];
+  const pedalSpec=fx['Guitar Pedalboard']={};
+  for(const [index,[key,type]] of pedalStages.entries()){
+    pedalSpec[key+'Order']=[0,pedalStages.length-1,index,1,''];
+    pedalSpec[key+'On']=[0,1,key==='drive'||key==='cab'?1:0,1,''];
+    for(const [param,spec] of Object.entries(fx[type]))pedalSpec[key+'_'+param]=spec;
+  }
+  const structuralFXParam=(type,key)=>type==='Spectrum EQ'&&key.endsWith('On')||
+    type==='Guitar Pedalboard'&&/(?:Order|On)$/.test(key);
+  const pedalOrder=e=>[...pedalStages].sort(([a],[b])=>e.params[a+'Order']-e.params[b+'Order']);
+  function validEffectParams(type,params){
+    if(!Object.hasOwn(fx,type)||!params||!Object.entries(fx[type]).every(([key,[min,max]])=>{
+      const value=params[key];
+      return Number.isFinite(value)&&value>=min&&value<=max&&(!structuralFXParam(type,key)||Number.isInteger(value));
+    }))return false;
+    return type!=='Guitar Pedalboard'||new Set(pedalStages.map(([key])=>params[key+'Order'])).size===pedalStages.length;
+  }
   const clone = value => structuredClone(value);
   const uid = () => globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2);
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -139,7 +176,9 @@ Object.assign(SW, (() => {
     if(t.type!=='master'&&SW.spatialSpecs){
       for(const [key,spec] of Object.entries(SW.spatialSpecs)) lanes['space:'+key]=spec;
     }
-    for(const e of t.fx) for(const [key,spec] of Object.entries(fx[e.type])) lanes['fx:'+e.id+':'+key]=[e.type+' · '+key,...spec.slice(0,2),spec[3],spec[4]];
+    for(const e of t.fx) for(const [key,spec] of Object.entries(fx[e.type])){
+      if(!structuralFXParam(e.type,key))lanes['fx:'+e.id+':'+key]=[e.type+' · '+key,...spec.slice(0,2),spec[3],spec[4]];
+    }
     return lanes;
   }
   function laneValue(t,key) {
@@ -168,5 +207,6 @@ Object.assign(SW, (() => {
       default:return x;
     }
   }
-  return {fadeShapes,fadeLevel,colors,instruments,fx,clone,uid,clamp,db,quantize,seconds,noteName,project,channel,clip,note,effect,songEnd,demo,validRoute,automationValue,splitClip,laneSpecs,laneValue,setLaneValue};
+  return {fadeShapes,fadeLevel,colors,instruments,fx,spectrumBands,pedalStages,pedalOrder,structuralFXParam,validEffectParams,
+    clone,uid,clamp,db,quantize,seconds,noteName,project,channel,clip,note,effect,songEnd,demo,validRoute,automationValue,splitClip,laneSpecs,laneValue,setLaneValue};
 })());
