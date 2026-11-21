@@ -6,6 +6,8 @@ Object.assign(SW, (() => {
     'Chorus','Tremolo','Stereo Width','Low Shelf','Band Pass','Notch','Three-Band EQ','Parallel Compressor',
     'Slap Delay','Hall Reverb','Flanger','Phaser','Auto Pan','Soft Clipper','Bit Reducer','Cabinet Filter','Polarity','Utility Gain'];
   function art(name){
+    if(name==='Spectrum EQ')name='Parametric EQ';
+    if(name==='Guitar Pedalboard')name='Drive';
     const i=artNames.indexOf(name);
     return i<0?null:{x:(i%6)*20,y:Math.floor(i/6)*20};
   }

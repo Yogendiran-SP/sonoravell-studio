@@ -9,7 +9,7 @@ function load(file,env){
   vm.runInContext(fs.readFileSync(path.join(source,file),'utf8'),env,{filename:file});
 }
 const env = vm.createContext({console,structuredClone,TextEncoder,TextDecoder,btoa,atob,Blob,crypto,URL,URLSearchParams});
-for(const name of ['model','arrangement','formats','spatial','keyscheme','studio-panels','patch','patch-panel','audio','workflows','note-editor','settings','midi-expression','track-icons','editor-actions']) load(name+'.js',env);
+for(const name of ['model','arrangement','formats','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','workflows','note-editor','settings','midi-expression','track-icons','editor-actions']) load(name+'.js',env);
 const T=env.SW;
 
 class Param {
@@ -42,7 +42,47 @@ for(const type of ['Gain','Panner','StereoPanner','Analyser','BiquadFilter','Dyn
   Context.prototype['create'+type]=()=>new AudioNode();
 }
 
+function verifyStockDevices(){
+  const session=T.demo(), track=session.tracks[0], context=new Context();
+  const eq=T.effect('Spectrum EQ'), pedal=T.effect('Guitar Pedalboard');
+  T.addEffect(track,eq);T.addEffect(track,pedal);
+  eq.params.lcOn=1;eq.params.lcFreq=72;eq.params.midGain=6;eq.params.output=-3;
+  pedal.params.driveOrder=2;pedal.params.cabOrder=1;
+  assert.equal(T.pedalOrder(pedal)[1][1],'Cabinet Filter');
+  assert.equal(T.pedalOrder(pedal)[2][1],'Drive');
+  assert.ok(!Object.hasOwn(T.laneSpecs(track),'fx:'+pedal.id+':driveOrder'));
+  assert.ok(Object.hasOwn(T.laneSpecs(track),'fx:'+pedal.id+':drive_amount'));
+  const graph=T.buildGraph(context,session,true);
+  const processors=graph.tracks.get(track.id).processors, equalizer=processors.get(eq.id), board=processors.get(pedal.id);
+  assert.equal(equalizer.filters.length,6);
+  assert.equal(equalizer.filters[0].type,'highpass');
+  assert.equal(equalizer.filters[0].frequency.value,72);
+  assert.equal(equalizer.output.gain.value,T.db(-3));
+  assert.equal(board.input.connected[0].type,'highpass','processing order must match the pedalboard');
+  assert.ok(board.params.drive_amount);
+  assert.equal(board.params.echo_time,undefined,'the bypassed delay is outside the signal path');
+  graph.stop();
+  const roundtrip=T.decodeProject(T.encodeProject(session,new Map())).p;
+  assert.equal(roundtrip.tracks[0].fx.at(-1).params.driveOrder,2);
+  const invalid=T.clone(session);invalid.tracks[0].fx.at(-1).params.driveOrder=1;
+  assert.throws(()=>T.validateProject(invalid),/effect parameters/);
+  const handles=T.pluginHandles('eq',eq);
+  assert.equal(handles.length,7);
+  const peak=handles.find(point=>point.key==='mid'), cut=handles.find(point=>point.key==='lc');
+  const start=T.handlePosition('eq',peak,eq.params,T.fx[eq.type],24);
+  const moved=T.handleValues('eq',peak,[start[0]+.08,start[1]-.1],eq.params,T.fx[eq.type],24);
+  assert.ok(moved.midFreq>eq.params.midFreq&&moved.midGain>6);
+  assert.deepEqual(Object.keys(T.handleValues('eq',cut,start,eq.params,T.fx[eq.type],24)),['lcFreq']);
+  const simulatedFilters=[{getFrequencyResponse(_frequencies,mag){mag.fill(2);}}];
+  const response=T.frequencyResponse(eq,{filters:simulatedFilters});
+  assert.ok(Math.abs(response[0]-(20*Math.log10(2)-3))<1e-6);
+  eq.bypass=true;
+  assert.ok(T.frequencyResponse(eq,{filters:simulatedFilters}).every(value=>value===0));
+  console.log('Spectrum EQ filter graph and point mapping, pedal order and bypass, and project round-trip passed.');
+}
+
 async function verify(){
+  verifyStockDevices();
   {
     const a=T.note(61,.5,1,.5), b=T.note(69,1.75,.5,.85), partForEdit=T.clip('midi',0,4,'Phrase');
     partForEdit.notes=[a,b];

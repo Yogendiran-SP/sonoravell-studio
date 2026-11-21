@@ -6,11 +6,11 @@ Object.assign(SW, (() => {
     KeyY:8,KeyH:9,KeyU:10,KeyJ:11,KeyK:12,KeyO:13,KeyL:14,KeyP:15,Semicolon:16,Quote:17
   });
   const effectCategories={
-    EQ:['Parametric EQ','Low Cut','Low Pass','High Shelf','Low Shelf','Band Pass','Notch','Three-Band EQ'],
+    EQ:['Spectrum EQ','Parametric EQ','Low Cut','Low Pass','High Shelf','Low Shelf','Band Pass','Notch','Three-Band EQ'],
     Dynamics:['Compressor','Limiter','Parallel Compressor'],
     Space:['Echo','Room Reverb','Slap Delay','Hall Reverb'],
     Modulation:['Chorus','Tremolo','Flanger','Phaser','Auto Pan'],
-    Color:['Drive','Soft Clipper','Bit Reducer','Cabinet Filter'],
+    Color:['Guitar Pedalboard','Drive','Soft Clipper','Bit Reducer','Cabinet Filter'],
     Utility:['Utility Gain','Stereo Width','Polarity']
   };
   const presets={

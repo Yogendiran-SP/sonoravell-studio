@@ -1,6 +1,6 @@
 'use strict';
 Object.assign(SW, (() => {
-  const {clamp,validRoute,fx,instruments}=SW;
+  const {clamp,validRoute,instruments}=SW;
   const encode = new TextEncoder();
   function wav(buffer,bits=24,{dither=false,tags={},channelMask=0}={}) {
     const channels=buffer.numberOfChannels, bytes=bits/8, size=buffer.length*channels*bytes;
@@ -138,7 +138,7 @@ Object.assign(SW, (() => {
       }
       for(const e of t.fx){
         checkId(e.id);
-        assertion(Object.hasOwn(fx,e.type)&&e.params&&Object.entries(fx[e.type]).every(([key,spec])=>finite(e.params[key],spec[0],spec[1])),'effect parameters');
+        assertion(SW.validEffectParams(e.type,e.params),'effect parameters');
       }
       assertion(t.instrumentDisabled===undefined||t.type==='midi'&&typeof t.instrumentDisabled==='boolean','instrument state');
       assertion(t.instrumentOnly===undefined||t.type==='midi'&&t.instrumentOnly===true&&!t.clips.length&&!t.folder,'retained instrument state');

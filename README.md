@@ -1,4 +1,4 @@
-# Sonoravell Studio 1.0.0
+# Sonoravell Studio 1.0.1
 
 Sonoravell Studio is a browser-based digital audio workstation in active development. Version 1.0 introduces a dedicated MIDI editor with note properties, scale tools, and a velocity lane, plus editor-aware clipboard shortcuts. Earlier Soundweave sessions remain importable. The included *After Hours* session contains instruments, an FX return, and two independent cue feeds.
 
@@ -58,7 +58,8 @@ The app records one selected or armed track per take. The primary capture path u
 - Click an instrument or audio track header while Edit is open. Edit shows that track's piano roll or waveform. Choose another part or event from the editor's selector.
 - Hold **Ctrl** with the Arrow tool to see the Range crosshair. Drag across a lane or event to select time. **Ctrl+click** toggles selection. **Ctrl+Z** undoes project changes. **N** toggles snapping in Edit and the Arrangement, and restores the last snap grid when turned back on. Draw, Erase, Split, Mute, Listen, and Stretch use specialized pointers in the Arrangement.
 - Drag the fade handles at the two ends of an audio event in the Arrangement or the Audio Editor. The Audio Editor has exact milliseconds, five fade shapes, and event gain in dB. Focus a handle and use the arrow keys for 5 ms changes, or hold Shift for 50 ms.
-- Right-click a track header for track commands including rename, icon, editor, record arm, duplicate, and remove. Use **Delete** on a focused note, event, automation point, marker, insert, send, Pool audio source, or Signal Flow wire. If you selected an arrangement range, Delete removes its contents.
+- **Delete** follows the focused marker, global event, timeline clip or range, piano-roll note, automation or MIDI controller point, insert, send, Pool audio source, or Signal Flow wire. It stays available after importing shortcut maps. Number and text fields keep their normal editing behavior.
+- Right-click a track header for track commands. **Shift+T** removes a track and **Shift+Alt+T** removes its instrument with it. Use the separate track commands when a track is selected.
 - **Controls** in Edit reveals the range, selection, and detailed editorial controls. **Action** opens the appropriate commands for the Audio or Note Editor.
 - Right-click an arrangement event to see its Audio Event or Instrument Part commands. Right-click a note for note clipboard, velocity, transpose, and timing commands. **Shift+F10** opens the same context menu for a focused event.
 - Use **Macros** in Arrangement or Edit to choose a ready-made sequence. **Studio → Macro Organizer** creates, edits, duplicates, orders, and removes macros. Arrangement, Note Editor, and Audio Editor each have a command list. Some commands accept values such as semitones, velocity, gain, or fade time. A macro with project changes produces a single Undo entry.
@@ -143,16 +144,17 @@ Open a track’s **Spatial** panner. Set it to surround bed source or object sou
 
 ### Plug-in and instrument editors
 
-- **Mixer / Inspector → Inserts → Edit** opens a device panel. **Open instrument** opens the instrument panel. Illustrations cover all 27 built-in effects and 9 instruments.
-- The faceplate and precision panel mirror each other. Drag a knob vertically, hold Shift for finer adjustments, use arrow keys, double-click to reset a knob, or type the value in its numeric field. Frequency knobs use logarithmic movement. All knobs expose their actual values to assistive technologies.
-- EQ and filter editors show a response curve during playback, compressor editors show gain reduction, and effect editors show the channel spectrum and peak. Bypass, reset, copy, and paste controls act on individual inserts.
+- **Mixer / Inspector → Inserts → Edit** opens an illustrated, interactive device face. **Open instrument** opens the instrument panel. All 29 stock effects and 9 instruments have controls on their faces. Drag a knob vertically, hold Shift for finer adjustment, double-click to reset it, or type a precise value and press Enter.
+- **Spectrum EQ** has low/high cuts, low/high shelves, and three bell bands. Drag a handle horizontally for frequency and vertically for gain where applicable. Use the wheel over a handle to set Q on bands that support it. Select a band and use its power switch to enable or bypass it. Use the spectrum menu to show plug-in input and output separately or together. The filter response remains visible when playback is stopped.
+- **Guitar Pedalboard** includes eight independently switchable effects. Drag a pedal by its header or use its arrow buttons to reorder the processing chain. Adjust pedal values on the face. The session stores order, bypass states, and control values, and the same order is used for mixdown.
+- Other faces show effect-specific displays such as compressor transfer and gain reduction, repeat taps, modulation, saturation curves, and a stereo vectorscope. Instruments display the amplitude envelope or drum decay. Filter, envelope, and effect handles can be adjusted with arrow keys when focused. The plug-in power switch, reset, and settings clipboard apply per insert.
 - Synth controls include oscillator shape, envelope, cutoff, resonance, fine tune, and level. The sampler adds root pitch and sample start. Drums expose kick pitch, decay, noise, and level.
 
 ### Optional native plug-ins
 
-Install Pedalboard in the Python environment used by the launcher to enable native offline rendering. On Windows with the Python Launcher, use `py -3 -m pip install pedalboard`. Restart Soundweave, open **Browser → Local plug-ins → Scan system folders**, and select **Open editor** for a detected VST3 or macOS Audio Unit.
+Install Pedalboard in the Python environment used by the launcher to enable native offline rendering. On Windows with the Python Launcher, use `py -3 -m pip install pedalboard`. Restart Sonoravell, open **Browser → Local plug-ins → Scan system folders**, and select **Open editor** for a detected VST3 or macOS Audio Unit.
 
-Sonoravell reads the parameters the plug-in exposes and gives each a normalized 0–1 knob and numeric input. Select an audio clip for an effect or a MIDI part for an instrument, then use **Render selected event**. Soundweave creates a new audio track. Native processing runs in a separate process and does not require FFmpeg. Some vendor plug-ins need additional licensing or do not support this host. Native realtime inserts, vendor interfaces, VST2/ARA hosting, and third-party parameter automation remain open.
+Sonoravell reads the parameters the plug-in exposes and gives each a normalized 0–1 knob and numeric input. Select an audio clip for an effect or a MIDI part for an instrument, then use **Render selected event**. Sonoravell creates a new audio track. Native processing runs in a separate process and does not require FFmpeg. Some vendor plug-ins need additional licensing or do not support this host. Native realtime inserts, vendor interfaces, VST2/ARA hosting, and third-party parameter automation remain open.
 
 ### Studio One keyboard map
 
@@ -203,6 +205,9 @@ The automated checks cover project data, view wiring, and launcher behavior. Int
 - [Fender Studio Pro manual – Spatial mixing](https://fenderstudiopromanual.fender.com/en/Content/Spatial_Audio_Topics/Mixing_Spatial_Audio.htm)
 - [Fender Studio Pro manual – Cue mixes](https://fenderstudiopromanual.fender.com/en/Content/Recording_Topics/Cue_Mixes_and_Low-Latency_Monitoring.htm)
 - [Fender Studio Pro manual – Key commands](https://fenderstudiopromanual.fender.com/en/Content/Fundamentals_Topics/Key_Commands.htm)
+- [Fender Studio Pro manual – Pro EQ3](https://fenderstudiopromanual.fender.com/en/Content/Built-In_Effects_Topics/EQ.htm)
+- [Fender Studio Pro manual – Ampire and Pedalboard](https://fenderstudiopromanual.fender.com/en/Content/Built-In_Effects_Topics/Distortion.htm)
+- [Fender Studio – Adding plug-ins to your guitar pedalboard](https://www.youtube.com/watch?v=EafLQHEhhA4)
 - [Public reference for the exported keymap structure](https://github.com/pajdarova/FenderStudioProMCP/blob/main/src/studio_pro_mcp/keyscheme.py)
 - [Spotify Pedalboard – native plug-in API](https://spotify.github.io/pedalboard/reference/pedalboard.html)
 
