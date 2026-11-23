@@ -1,0 +1,88 @@
+name: DAW checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*.*.*-*']
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Regression suite (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run JavaScript checks
+        shell: bash
+        run: |
+          for test in tests/check*.cjs; do
+            node "$test"
+          done
+      - name: Install Linux codec test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install numpy
+      - name: Verify launcher and standalone build
+        run: |
+          python tests/check_local.py
+          python build.py
+          git diff --exit-code -- Sonoravell.html
+
+  browser:
+    name: Offline Session smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install test browser
+        run: |
+          npm install --no-save --no-package-lock playwright@1.62.1
+          npx playwright install --with-deps chromium --only-shell
+      - run: node tests/browser-smoke.cjs
+      - name: Package source and standalone build
+        run: git archive --format=zip --prefix=Sonoravell-Studio/ --output=Sonoravell-Studio.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sonoravell-Studio
+          path: Sonoravell-Studio.zip
+          if-no-files-found: error
+
+  release:
+    name: Draft prerelease
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [regression, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Sonoravell-Studio
+      - name: Prepare GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Sonoravell-Studio.zip \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease \
+            --title "Sonoravell Studio $GITHUB_REF_NAME" \
+            --notes "Browser-based development preview. See the README for launch instructions and hardware verification status."
