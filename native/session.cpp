@@ -33,47 +33,86 @@ std::vector<Note> afterHours() {
     return notes;
 }
 
-DemoAudio::DemoAudio() {
-    constexpr double framesPerBeat = 60 * sampleRate / demoTempo;
+Project afterHoursProject() {
+    Project project;
+    project.name = "After Hours";
+    project.tempo = static_cast<unsigned>(demoTempo);
+    project.bars = demoBars;
+    constexpr std::array names{"Electric Keys", "Sub Bass", "Drum Machine", "Glass Plucks"};
+    for (unsigned index = 0; index < names.size(); ++index) {
+        project.tracks.push_back({index + 1, names[index], static_cast<Instrument>(index), false, 100, {}, {}});
+    }
+    for (const auto& note : afterHours()) {
+        project.tracks[note.track].notes.push_back({
+            static_cast<std::uint32_t>(std::lround(note.startBeat * ticksPerBeat)),
+            static_cast<std::uint32_t>(std::lround(note.lengthBeats * ticksPerBeat)),
+            static_cast<std::uint8_t>(note.pitch),
+            static_cast<std::uint8_t>(std::lround(note.velocity * 127))
+        });
+    }
+    return project;
+}
+
+TrackMutes trackMutes(const Project& project) {
+    TrackMutes muted{};
+    for (std::size_t index = 0; index < project.tracks.size(); ++index) muted[index] = project.tracks[index].muted;
+    return muted;
+}
+
+SessionAudio::SessionAudio(const Project& project) {
+    validateProject(project);
     constexpr double tau = 2 * std::numbers::pi;
-    constexpr double pan[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}};
-    const auto sampleCount = std::lround(demoBars * 4 * framesPerBeat) * channelCount;
-    for (auto& track : tracks) track.resize(sampleCount);
-    for (const Note& note : afterHours()) {
-        auto& track = tracks[note.track];
-        const auto start = std::lround(note.startBeat * framesPerBeat);
-        const auto length = std::lround(note.lengthBeats * framesPerBeat);
-        const double frequency = 440 * std::exp2((note.pitch - 69) / 12.0);
-        std::uint32_t noiseState = 0x8c31274u + static_cast<std::uint32_t>(start);
-        for (long frame = 0; frame < length; ++frame) {
-            const double time = static_cast<double>(frame) / sampleRate;
-            const double phase = tau * frequency * time;
-            const double envelope = std::min({1.0, time * 350, (length - frame - 1) / 500.0});
-            double voice = std::sin(phase);
-            if (note.track == 2) {
-                noiseState = noiseState * 1664525u + 1013904223u;
-                const double noise = (noiseState >> 8) / 8388608.0 - 1.0;
-                voice = note.pitch == 36
-                    ? std::sin(tau * (52 * time + 2 * (1 - std::exp(-55 * time)))) * std::exp(-17 * time)
-                    : noise * std::exp(-(note.pitch == 38 ? 29 : 65) * time);
-            } else if (note.track == 3) {
-                voice = (.8 * voice + .2 * std::sin(phase * 2)) * std::exp(-12 * time);
+    constexpr double pan[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}, {1, 1}};
+    sampleCount = static_cast<std::size_t>(sessionFrames(project)) * channelCount;
+    tracks.resize(project.tracks.size());
+    for (std::size_t index = 0; index < tracks.size(); ++index) {
+        const auto& track = project.tracks[index];
+        auto& samples = tracks[index];
+        samples.resize(sampleCount);
+        const double volume = track.volume / 100.;
+        for (const auto& clip : track.clips) {
+            const auto& audio = findAsset(project, clip.assetId).stereo;
+            const auto start = static_cast<std::size_t>(frameAtTick(clip.tick, project.tempo)) * channelCount;
+            for (std::size_t sample = 0; sample < audio.size(); ++sample) {
+                samples[start + sample] += static_cast<float>(audio[sample] * (volume / 32768.));
             }
-            for (unsigned channel = 0; channel < channelCount; ++channel) {
-                track[(start + frame) * channelCount + channel] +=
-                    static_cast<float>(.14 * voice * note.velocity * envelope * pan[note.track][channel]);
+        }
+        for (const auto& note : track.notes) {
+            const auto start = frameAtTick(note.tick, project.tempo);
+            const auto length = frameAtTick(note.tick + note.length, project.tempo) - start;
+            const double frequency = 440 * std::exp2((note.pitch - 69) / 12.0);
+            const double level = .14 * note.velocity / 127 * volume;
+            std::uint32_t noiseState = 0x8c31274u + start;
+            for (std::uint32_t frame = 0; frame < length; ++frame) {
+                const double time = static_cast<double>(frame) / sampleRate;
+                const double phase = tau * frequency * time;
+                const double envelope = std::min({1.0, time * 350, (length - frame - 1) / 500.0});
+                double voice = std::sin(phase);
+                if (track.instrument == Instrument::drums) {
+                    noiseState = noiseState * 1664525u + 1013904223u;
+                    const double noise = (noiseState >> 8) / 8388608.0 - 1.0;
+                    voice = note.pitch == 36
+                        ? std::sin(tau * (52 * time + 2 * (1 - std::exp(-55 * time)))) * std::exp(-17 * time)
+                        : noise * std::exp(-(note.pitch == 38 ? 29 : 65) * time);
+                } else if (track.instrument == Instrument::pluck) {
+                    voice = (.8 * voice + .2 * std::sin(phase * 2)) * std::exp(-12 * time);
+                }
+                for (unsigned channel = 0; channel < channelCount; ++channel) {
+                    samples[(start + frame) * channelCount + channel] +=
+                        static_cast<float>(level * voice * envelope * pan[static_cast<unsigned>(track.instrument)][channel]);
+                }
             }
         }
     }
 }
 
-Samples DemoAudio::render(const TrackMutes& muted) const {
-    Samples samples(tracks.front().size());
+Samples SessionAudio::render(const TrackMutes& muted) const {
+    Samples samples(sampleCount);
     PlaybackMixer(*this, muted).read(samples, muted);
     return samples;
 }
 
-PlaybackMixer::PlaybackMixer(const DemoAudio& audio, const TrackMutes& initialMutes) : audio(audio) {
+PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes) : audio(audio) {
     for (std::size_t track = 0; track < gains.size(); ++track) {
         gains[track] = initialMutes[track] ? 0 : muteRampFrames;
     }
@@ -81,10 +120,10 @@ PlaybackMixer::PlaybackMixer(const DemoAudio& audio, const TrackMutes& initialMu
 
 std::size_t PlaybackMixer::read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept {
     const auto count = std::min(output.size() / channelCount * channelCount,
-                                audio.tracks.front().size() - position);
+                                audio.sampleCount - position);
     for (std::size_t offset = 0; offset < count; offset += channelCount) {
         double frame[channelCount]{};
-        for (std::size_t track = 0; track < gains.size(); ++track) {
+        for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
             const double gain = static_cast<double>(gains[track]) / muteRampFrames;
             for (unsigned channel = 0; channel < channelCount; ++channel) {
                 frame[channel] += audio.tracks[track][position + offset + channel] * gain;
@@ -102,7 +141,7 @@ std::size_t PlaybackMixer::read(std::span<std::int16_t> output, const TrackMutes
 }
 
 bool PlaybackMixer::finished() const noexcept {
-    return position == audio.tracks.front().size();
+    return position == audio.sampleCount;
 }
 
 void writeWave(std::ostream& output, const Samples& samples) {

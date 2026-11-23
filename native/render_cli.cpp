@@ -12,7 +12,7 @@
 namespace {
 using namespace sonoravell;
 
-void benchmark(const DemoAudio& demo) {
+void benchmark(const SessionAudio& demo) {
     using Clock = std::chrono::steady_clock;
     using Microseconds = std::chrono::duration<double, std::micro>;
     constexpr std::array blockSizes{32u, 64u, 128u};
@@ -38,18 +38,19 @@ void benchmark(const DemoAudio& demo) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: sonoravell-render <output.wav | --benchmark>\n";
+    if (argc < 2 || argc > 3 || (argc == 3 && std::string_view(argv[1]) == "--benchmark")) {
+        std::cerr << "Usage: sonoravell-render [session.sonora] <output.wav | --benchmark>\n";
         return 2;
     }
     try {
-        const DemoAudio demo;
+        const auto project = argc == 3 ? openProject(argv[1]) : afterHoursProject();
+        const SessionAudio audio(project);
         if (std::string_view(argv[1]) == "--benchmark") {
-            benchmark(demo);
+            benchmark(audio);
         } else {
-            std::ofstream file(argv[1], std::ios::binary);
+            std::ofstream file(argv[argc - 1], std::ios::binary);
             if (!file) throw std::runtime_error("Could not open WAV output");
-            writeWave(file, demo.render({}));
+            writeWave(file, audio.render(trackMutes(project)));
             file.close();
             if (!file) throw std::runtime_error("Could not finish WAV output");
         }
