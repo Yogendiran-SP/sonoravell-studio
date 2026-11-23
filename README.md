@@ -220,7 +220,7 @@ Run `node tests/check_recording.cjs` to verify timed PCM capture and the encoded
 
 The GitHub checks build the standalone HTML on Windows, macOS, and Linux. The Linux Chromium smoke test uses a simulated microphone to verify recording, imported audio, browser recovery, and WAV export. To run it locally with Playwright installed, use `node tests/browser-smoke.cjs`. Physical audio and MIDI devices, native browser window behavior, and rendering with an installed third-party plug-in require separate verification.
 
-The initial roadmap work covers part of PRJ-03 (local Session recovery), UX-06 (progressive control presets), and OPS-01/02 (automated checks and packaging). The G0 native real-time audio, redistribution, and hardware acceptance criteria remain open. Prerelease tags prepare a draft release and ZIP after the checks pass.
+The initial roadmap work covers part of PRJ-03 (local Session recovery), UX-06 (progressive control presets), and OPS-01/02 (automated checks and packaging). The G0 native real-time audio, redistribution, and hardware acceptance criteria remain open. A prerelease tag or a versioned prerelease branch such as `release/v1.0.2-alpha.1` prepares a GitHub draft release and ZIP after the checks pass.
 
 ## Sources
 
