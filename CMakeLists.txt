@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.20)
+project(SonoravellStudio LANGUAGES CXX)
+
+add_library(sonoravell_engine native/session.cpp)
+target_include_directories(sonoravell_engine PUBLIC native)
+target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
+
+if(WIN32)
+  add_executable(SonoravellStudio WIN32 native/windows.cpp)
+  target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32)
+  install(TARGETS SonoravellStudio RUNTIME DESTINATION .)
+  install(FILES README.md LICENSE DESTINATION .)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(session_check tests/session_check.cpp)
+  target_link_libraries(session_check PRIVATE sonoravell_engine)
+  add_test(NAME session_check COMMAND session_check)
+endif()

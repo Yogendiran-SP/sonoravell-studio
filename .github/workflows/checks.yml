@@ -1,94 +1,31 @@
-name: DAW checks
+name: Native DAW checks
 
 on:
   pull_request:
   push:
-    branches: [main, 'release/v*.*.*-*']
-    tags: ['v*.*.*-*']
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  regression:
-    name: Regression suite (${{ matrix.os }})
+  native:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Run JavaScript checks
-        shell: bash
-        run: |
-          for test in tests/check*.cjs; do
-            node "$test"
-          done
-      - name: Install Linux codec test dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          python -m pip install numpy
-      - name: Verify launcher and standalone build
-        shell: bash
-        run: |
-          python tests/check_local.py
-          python build.py
-          git diff --exit-code -- Sonoravell.html
-
-  browser:
-    name: Offline Session smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-      - name: Install test browser
-        run: |
-          npm install --no-save --no-package-lock playwright@1.62.1
-          npx playwright install --with-deps chromium --only-shell
-      - run: node tests/browser-smoke.cjs
-      - name: Package source and standalone build
-        run: git archive --format=zip --prefix=Sonoravell-Studio/ --output=Sonoravell-Studio.zip HEAD
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --config Release
+      - run: ctest --test-dir build -C Release --output-on-failure
+      - name: Stage Windows application
+        if: runner.os == 'Windows'
+        run: cmake --install build --config Release --prefix package
       - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
         with:
-          name: Sonoravell-Studio
-          path: Sonoravell-Studio.zip
+          name: Sonoravell-Studio-Windows
+          path: package/
           if-no-files-found: error
-
-  release:
-    name: Draft prerelease
-    if: github.event_name == 'push' && (github.ref_type == 'tag' || startsWith(github.ref, 'refs/heads/release/'))
-    needs: [regression, browser]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: Sonoravell-Studio
-      - name: Prepare GitHub prerelease
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          release_version="${GITHUB_REF_NAME#release/}"
-          tag_options=(--target "$GITHUB_SHA")
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            tag_options=(--verify-tag)
-          fi
-          gh release create "$release_version" Sonoravell-Studio.zip "${tag_options[@]}" \
-            --repo "$GITHUB_REPOSITORY" --draft --prerelease \
-            --title "Sonoravell Studio $release_version" \
-            --notes "Browser-based development preview. See the README for launch instructions and hardware verification status."
