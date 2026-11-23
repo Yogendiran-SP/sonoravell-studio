@@ -1,5 +1,6 @@
 #include "project.hpp"
 #include "session.hpp"
+#include "session_autosave.hpp"
 
 #include <bit>
 #include <filesystem>
@@ -100,6 +101,42 @@ int main() {
         for (const auto& item : std::filesystem::directory_iterator(directory.path)) {
             check(!item.path().filename().string().starts_with(".sonoravell-save-"), "Save staging was not cleaned up");
         }
+
+        const auto recoveryRoot = directory.path / "Session recovery";
+        SessionAutosave autosave;
+        autosave.checkpoint(recoveryRoot, reopened);
+        const auto slotDirectory = std::filesystem::directory_iterator(recoveryRoot)->path();
+        const auto a = slotDirectory / "Checkpoint A.sonora";
+        const auto b = slotDirectory / "Checkpoint B.sonora";
+        auto edited = reopened;
+        edited.tempo = 125;
+        autosave.checkpoint(recoveryRoot, edited);
+        check(openProject(a) == reopened && openProject(b) == edited, "Autosave did not retain both revisions");
+        edited.tempo = 0;
+        rejects([&] { autosave.checkpoint(recoveryRoot, edited); });
+        check(openProject(a) == reopened && openProject(b).tempo == 125,
+              "A failed autosave damaged a valid checkpoint");
+        edited.tempo = 140;
+        autosave.checkpoint(recoveryRoot, edited);
+        check(openProject(a) == edited && openProject(b).tempo == 125,
+              "Autosave retry overwrote the wrong checkpoint");
+        const auto moved = slotDirectory / "last-good-B.sonora";
+        std::filesystem::rename(b, moved);
+        std::filesystem::create_directory(b);
+        edited.tempo = 150;
+        rejects([&] { autosave.checkpoint(recoveryRoot, edited); });
+        check(openProject(a).tempo == 140 && openProject(moved).tempo == 125,
+              "A failing filesystem replacement damaged an autosave revision");
+        std::filesystem::remove(b);
+        autosave.checkpoint(recoveryRoot, edited);
+        check(openProject(a).tempo == 140 && openProject(b).tempo == 150,
+              "A filesystem error advanced the autosave slot");
+        check(openProject(session) == reopened, "Autosave modified the named Session");
+        autosave.startSession();
+        autosave.checkpoint(recoveryRoot, reopened);
+        check(std::distance(std::filesystem::directory_iterator(recoveryRoot),
+                            std::filesystem::directory_iterator{}) == 2,
+              "Independent Sessions shared a recovery folder");
 
         check(recordingCapacity(reopened, 0) >= 60 * sampleRate, "A minimal Session cannot hold a 60 second recording");
         const auto endTick = maxBars * beatsPerBar * ticksPerBeat;

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp)
+add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 

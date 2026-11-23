@@ -59,8 +59,17 @@ same journal creates another track.
 
 ## Remaining risk and next increment
 
-Add revisioned local Session autosave separate from the named file, then
-verify restore without changing and without overwriting the named project.
-A recording journal preserves samples and the start beat, while unsaved
-Session edits still need snapshot recovery. Full duplex, interface selection
-and measured dropouts remain gated behind device-layer work.
+Session autosave writes after about 1.2 seconds of idle time. It is deferred
+during playback and capture. Use **Find a command → Restore Session
+checkpoint…** to open a copy from
+`%LOCALAPPDATA%\Sonoravell Studio\Recovery\Sessions`. Sort each Session
+folder by date and try the other checkpoint if the newest is invalid.
+Two alternating files use the same staged replacement as a named Session.
+A failure preserves the prior readable checkpoint and retries after 15 seconds.
+Unsaved edits since the last successful checkpoint can still be lost.
+Snapshot writes run on the idle UI thread and may delay new input on slow
+storage. Files remain available for manual recovery and cleanup.
+
+The next dependency is a device backend boundary with capability and format
+negotiation. Full duplex, physical device selection and measured dropouts
+remain open.
