@@ -126,13 +126,13 @@ public:
         muteMask.store(mask);
     }
 
-    void play(const SessionAudio& session) {
+    void play(const SessionAudio& session, unsigned startFrame) {
         stop();
         played.store(0);
         playbackState.store(State::playing);
         try {
-            worker = std::jthread([this, &session](std::stop_token stopToken) {
-                PlaybackMixer mixer(session, WaveStream::decodeMutes(muteMask.load()));
+            worker = std::jthread([this, &session, startFrame](std::stop_token stopToken) {
+                PlaybackMixer mixer(session, WaveStream::decodeMutes(muteMask.load()), startFrame);
                 bool ok;
                 {
                     WaveStream stream;

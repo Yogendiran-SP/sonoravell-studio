@@ -112,7 +112,8 @@ Samples SessionAudio::render(const TrackMutes& muted) const {
     return samples;
 }
 
-PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes) : audio(audio) {
+PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame)
+    : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount) {
     for (std::size_t track = 0; track < gains.size(); ++track) {
         gains[track] = initialMutes[track] ? 0 : muteRampFrames;
     }

@@ -68,6 +68,13 @@ int main() {
     }
     check(consumed == mix.size() && playback.read(block, {}) == 0, "Playback ends exactly once");
 
+    PlaybackMixer seek(demo, {}, 4000);
+    check(seek.read(block, {}) == blockSamples &&
+          std::ranges::equal(block, std::span(mix).subspan(4000 * channelCount, blockSamples)),
+          "A playback start frame must match the original mix at that position");
+    PlaybackMixer tooLate(demo, {}, mix.size());
+    check(tooLate.finished() && tooLate.read(block, {}) == 0, "Out-of-range start clamps to the end");
+
     std::ostringstream output;
     writeWave(output, mix);
     const auto wave = output.str();
