@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <windowsx.h>
+#include <commctrl.h>
 #include <commdlg.h>
 #include <mmsystem.h>
 
@@ -9,6 +10,9 @@
 #include "windows_audio.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cwctype>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -27,6 +31,8 @@ enum ControlId {
     titleId = 100, newId, demoId, openId, saveId, exportId, recordId, playId, stopId, undoId, tempoLabelId, tempoId,
     tempoApplyId, commandId, focusId, inspectorId, trackListId, trackLabelId, beatLabelId, beatId,
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
+    lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
+    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -37,6 +43,8 @@ Capture capture;
 std::function<void()> undo;
 bool dirty = false;
 bool focused = false;
+bool inspectorShown = true, browserShown = true, mixerShown = true;
+unsigned playFrom = 0;
 unsigned takeTick = 0;
 std::uint32_t totalFrames = sessionFrames(project);
 
@@ -87,13 +95,16 @@ void layout(HWND window) {
     place(tempoLabelId, 350, 53, 82, 20);
     place(tempoId, 430, 47, 52, 26);
     place(tempoApplyId, 490, 47, 57, 28);
-    place(commandId, width - 145, 47, 126, 28);
+    place(queryId, width - 249, 47, 143, 27);
+    place(commandId, width - 99, 47, 84, 28);
 
-    for (int id : {inspectorId, trackLabelId, trackListId, beatLabelId, beatId, pitchLabelId, pitchId,
-                   noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
-                   mixerId, volumeLabelId, volumeId, volumeApplyId, muteId}) {
-        ShowWindow(field(window, id), focused ? SW_HIDE : SW_SHOW);
-    }
+    const auto show = [&](std::initializer_list<int> ids, bool visible) {
+        for (int id : ids) ShowWindow(field(window, id), visible && !focused ? SW_SHOW : SW_HIDE);
+    };
+    show({inspectorId, trackLabelId, trackListId, beatLabelId, beatId, pitchLabelId, pitchId, lengthLabelId,
+          lengthId, noteListId, noteId, updateNoteId, deleteNoteId, moveId, removeId}, inspectorShown);
+    show({browserId, importId, addTrackId, assetListId, placeId}, browserShown);
+    show({mixerId, volumeLabelId, volumeId, volumeApplyId, muteId}, mixerShown);
     place(inspectorId, 10, 91, 173, height - 176);
     place(trackLabelId, 22, 122, 145, 18);
     place(trackListId, 22, 143, 148, 280);
@@ -101,9 +112,14 @@ void layout(HWND window) {
     place(beatId, 126, 180, 45, 24);
     place(pitchLabelId, 22, 219, 100, 22);
     place(pitchId, 126, 215, 45, 24);
-    place(noteId, 22, 252, 148, 27);
-    place(moveId, 22, 289, 148, 27);
-    place(removeId, 22, 326, 148, 27);
+    place(lengthLabelId, 22, 251, 100, 22);
+    place(lengthId, 126, 247, 45, 24);
+    place(noteListId, 22, 277, 148, 240);
+    place(noteId, 22, 309, 148, 27);
+    place(updateNoteId, 22, 343, 70, 27);
+    place(deleteNoteId, 99, 343, 71, 27);
+    place(moveId, 22, 377, 148, 27);
+    place(removeId, 22, 411, 148, 27);
     place(browserId, width - 183, 91, 173, height - 176);
     place(importId, width - 171, 124, 148, 28);
     place(addTrackId, width - 171, 162, 148, 28);
@@ -121,7 +137,8 @@ void layout(HWND window) {
 RECT arrangeRect(HWND window) {
     RECT rect{};
     GetClientRect(window, &rect);
-    return {focused ? 12 : 190, 96, rect.right - (focused ? 12 : 190), rect.bottom - (focused ? 28 : 87)};
+    return {focused || !inspectorShown ? 12 : 190, 96, rect.right - (focused || !browserShown ? 12 : 190),
+            rect.bottom - (focused || !mixerShown ? 28 : 87)};
 }
 
 void fill(HDC dc, const RECT& rect, COLORREF color) {
@@ -203,11 +220,10 @@ void drawArrangement(HWND window) {
         FillRect(dc, &line, GetSysColorBrush(COLOR_3DLIGHT));
         lastLabel = x;
     }
-    if (audio.state() == Output::State::playing) {
-        const int x = xOf(audio.framesPlayed());
-        const RECT playhead{x, ruler.top, x + 2, gridTop + height};
-        fill(dc, playhead, RGB(220, 105, 39));
-    }
+    const bool playing = audio.state() == Output::State::playing;
+    const int x = xOf(playFrom + (playing ? audio.framesPlayed() : 0));
+    const RECT playhead{x, ruler.top, x + (playing ? 2 : 1), gridTop + height};
+    fill(dc, playhead, RGB(220, 105, 39));
     RestoreDC(dc, savedDc);
     EndPaint(window, &paint);
 }
@@ -216,26 +232,59 @@ int selectedTrack(HWND window) {
     return static_cast<int>(SendMessageW(field(window, trackListId), CB_GETCURSEL, 0, 0));
 }
 
+std::wstring beatText(unsigned tick) {
+    auto text = std::to_wstring(static_cast<double>(tick) / ticksPerBeat);
+    text.erase(text.find_last_not_of(L'0') + 1);
+    if (text.back() == L'.') text.pop_back();
+    return text;
+}
+
+void pickNote(HWND window) {
+    const int trackIndex = selectedTrack(window);
+    const auto noteIndex = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
+    if (trackIndex < 0 || noteIndex < 0 || static_cast<std::size_t>(trackIndex) >= project.tracks.size()) return;
+    const auto& notes = project.tracks[trackIndex].notes;
+    if (static_cast<std::size_t>(noteIndex) >= notes.size()) return;
+    const auto& note = notes[noteIndex];
+    SetDlgItemTextW(window, beatId, beatText(note.tick).c_str());
+    SetDlgItemTextW(window, lengthId, beatText(note.length).c_str());
+    SetDlgItemInt(window, pitchId, note.pitch, FALSE);
+}
+
 void refreshTrack(HWND window) {
     const int index = selectedTrack(window);
     const bool selected = index >= 0 && index < static_cast<int>(project.tracks.size());
     const bool safeToEdit = selected && !capture.active();
     for (int id : {volumeId, volumeApplyId, muteId}) EnableWindow(field(window, id), safeToEdit);
     EnableWindow(field(window, beatId), !capture.active());
-    bool instrument = false, audioClip = false;
+    bool instrument = false, audioClip = false, hasNotes = false;
+    const auto noteList = field(window, noteListId);
+    SendMessageW(noteList, CB_RESETCONTENT, 0, 0);
+    SetDlgItemTextW(window, lengthId, L"1");
     if (selected) {
         const auto& track = project.tracks[index];
         instrument = track.instrument != Instrument::audio;
         audioClip = !track.clips.empty();
         SetDlgItemInt(window, volumeId, track.volume, FALSE);
         CheckDlgButton(window, muteId, track.muted ? BST_CHECKED : BST_UNCHECKED);
-        SetDlgItemInt(window, beatId, audioClip ? track.clips.front().tick / ticksPerBeat : 0, FALSE);
+        SetDlgItemTextW(window, beatId, beatText(audioClip ? track.clips.front().tick : 0).c_str());
+        hasNotes = !track.notes.empty();
+        for (const auto& note : track.notes) {
+            const auto item = L"Beat " + beatText(note.tick) + L"  |  MIDI " + std::to_wstring(note.pitch);
+            SendMessageW(noteList, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
+        }
+        if (hasNotes) {
+            SendMessageW(noteList, CB_SETCURSEL, 0, 0);
+            pickNote(window);
+        }
     } else {
         SetDlgItemTextW(window, volumeId, L"");
         CheckDlgButton(window, muteId, BST_UNCHECKED);
     }
     EnableWindow(field(window, pitchId), safeToEdit && instrument);
     EnableWindow(field(window, noteId), safeToEdit && instrument);
+    EnableWindow(field(window, lengthId), safeToEdit && instrument);
+    for (int id : {noteListId, updateNoteId, deleteNoteId}) EnableWindow(field(window, id), safeToEdit && hasNotes);
     EnableWindow(field(window, moveId), safeToEdit && audioClip);
     EnableWindow(field(window, removeId), safeToEdit);
 }
@@ -277,6 +326,30 @@ unsigned value(HWND window, int id, unsigned min, unsigned max, const char* mess
     return result;
 }
 
+unsigned beatInput(HWND window, int id, bool duration) {
+    wchar_t fieldText[24]{};
+    const auto size = GetDlgItemTextW(window, id, fieldText, static_cast<int>(std::size(fieldText)));
+    if (size <= 0 || size >= static_cast<int>(std::size(fieldText) - 1)) {
+        throw std::runtime_error("Enter a beat value such as 0, 1 or 2.5.");
+    }
+    std::string number;
+    for (wchar_t digit : std::wstring_view(fieldText, size)) {
+        if ((digit < L'0' || digit > L'9') && digit != L'.') {
+            throw std::runtime_error("Enter beats using digits and a decimal point.");
+        }
+        number.push_back(static_cast<char>(digit));
+    }
+    double beats = 0;
+    const auto [end, error] = std::from_chars(number.data(), number.data() + number.size(), beats);
+    const auto limit = maxBars * beatsPerBar * ticksPerBeat;
+    if (error != std::errc{} || end != number.data() + number.size() || beats >= maxBars * beatsPerBar) {
+        throw std::runtime_error("Beat value is outside the supported timeline.");
+    }
+    const auto tick = static_cast<unsigned>(std::lround(beats * ticksPerBeat));
+    if (tick >= limit || (duration && tick == 0)) throw std::runtime_error("Enter a positive duration within the timeline.");
+    return tick;
+}
+
 template<class Items>
 std::uint32_t newIdFor(const Items& items) {
     for (std::uint32_t id = 1; id <= items.size() + 1; ++id) {
@@ -298,6 +371,7 @@ void edit(HWND window, std::function<void()> reverse, int index, bool newAudio =
         prepared.reset();
     }
     totalFrames = sessionFrames(project);
+    playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
     undo = std::move(reverse);
     dirty = true;
@@ -313,6 +387,7 @@ void revert(HWND window) {
     undo = {};
     dirty = true;
     totalFrames = sessionFrames(project);
+    playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
     refresh(window, index);
     status(window, L"Undid the last edit.");
@@ -322,7 +397,9 @@ void installProject(HWND window, Project next) {
     audio.stop();
     prepared.reset();
     project = std::move(next);
+    playFrom = 0;
     totalFrames = sessionFrames(project);
+    playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
     dirty = false;
     undo = {};
@@ -387,13 +464,26 @@ void finishTake(HWND window) {
 void showCommands(HWND window) {
     const auto menu = CreatePopupMenu();
     if (!menu) return;
+    wchar_t queryText[100]{};
+    GetDlgItemTextW(window, queryId, queryText, static_cast<int>(std::size(queryText)));
+    const auto lowercase = [](std::wstring text) {
+        std::ranges::transform(text, text.begin(), [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+        return text;
+    };
+    const auto query = lowercase(queryText);
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
          {openId, L"Open Session..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
          {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
-         {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}}) {
-        AppendMenuW(menu, MF_STRING | (IsWindowEnabled(field(window, entry.first)) ? MF_ENABLED : MF_GRAYED),
+         {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
+         {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
+         {toggleInspectorId, L"Toggle Inspector"}, {toggleBrowserId, L"Toggle Browser"},
+         {toggleMixerId, L"Toggle Mixer"}, {resetLayoutId, L"Reset workspace"}}) {
+        if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
+        const auto action = field(window, entry.first);
+        AppendMenuW(menu, MF_STRING | (!action || IsWindowEnabled(action) ? MF_ENABLED : MF_GRAYED),
                     entry.first, entry.second);
     }
+    if (GetMenuItemCount(menu) == 0) AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"No matching commands");
     RECT rect{};
     GetWindowRect(field(window, commandId), &rect);
     TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
@@ -402,8 +492,16 @@ void showCommands(HWND window) {
 
 void execute(HWND window, int id) {
     if (id == commandId) { showCommands(window); return; }
-    if (id == focusId) {
-        focused = !focused;
+    if (id == queryFocusId) { SetFocus(field(window, queryId)); return; }
+    if (id == focusId || id == toggleInspectorId || id == toggleBrowserId || id == toggleMixerId || id == resetLayoutId) {
+        if (id == focusId) focused = !focused;
+        else {
+            if (id == toggleInspectorId) inspectorShown = focused || !inspectorShown;
+            if (id == toggleBrowserId) browserShown = focused || !browserShown;
+            if (id == toggleMixerId) mixerShown = focused || !mixerShown;
+            if (id == resetLayoutId) inspectorShown = browserShown = mixerShown = true;
+            focused = false;
+        }
         SetDlgItemTextW(window, focusId, focused ? L"Full view" : L"Focus");
         layout(window);
         return;
@@ -453,13 +551,13 @@ void execute(HWND window, int id) {
             status(window, L"Exported 48 kHz stereo WAV.");
         }
     } else if (id == playId) {
-        audio.play(renderedSession());
+        audio.play(renderedSession(), playFrom);
         status(window, L"Playing Session.");
     } else if (id == recordId) {
         if (project.tracks.size() >= maxTracks || project.assets.size() >= maxAssets) {
             throw std::runtime_error("The Session is at its track or audio source limit.");
         }
-        takeTick = value(window, beatId, 0, maxBars * beatsPerBar - 1, "Enter a valid record start beat.") * ticksPerBeat;
+        takeTick = beatInput(window, beatId, false);
         const auto capacity = recordingCapacity(project, takeTick);
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
         audio.stop();
@@ -469,7 +567,7 @@ void execute(HWND window, int id) {
     } else if (id == importId) {
         const auto path = selectFile(window, false, wavFilter, L"wav");
         if (!path.empty()) {
-            const auto tick = value(window, beatId, 0, maxBars * beatsPerBar - 1, "Enter a valid audio start beat.") * ticksPerBeat;
+            const auto tick = beatInput(window, beatId, false);
             std::ifstream file(path, std::ios::binary);
             addAudio(window, readWave(file, newIdFor(project.assets), audioName(path)), tick);
             status(window, L"Imported WAV into a new track.");
@@ -478,7 +576,7 @@ void execute(HWND window, int id) {
         const auto source = SendMessageW(field(window, assetListId), LB_GETCURSEL, 0, 0);
         if (source < 0 || static_cast<std::size_t>(source) >= project.assets.size()) return;
         if (project.tracks.size() >= maxTracks) throw std::runtime_error("The Session is at its track limit.");
-        const auto tick = value(window, beatId, 0, maxBars * beatsPerBar - 1, "Enter a valid audio start beat.") * ticksPerBeat;
+        const auto tick = beatInput(window, beatId, false);
         const auto& asset = project.assets[source];
         project.tracks.push_back({newIdFor(project.tracks), asset.name, Instrument::audio, false, 100, {}, {{asset.id, tick}}});
         edit(window, [] { project.tracks.pop_back(); }, static_cast<int>(project.tracks.size() - 1));
@@ -518,16 +616,39 @@ void execute(HWND window, int id) {
             track.volume = value(window, volumeId, 0, 100, "Enter a level from 0 to 100 percent.");
             edit(window, [index, previous] { project.tracks[index].volume = previous; }, index);
             status(window, L"Updated track level.");
-        } else if (id == noteId && track.instrument != Instrument::audio) {
-            const auto tick = value(window, beatId, 0, maxBars * beatsPerBar - 1, "Enter a valid note start beat.") * ticksPerBeat;
-            const auto pitch = value(window, pitchId, 0, 127, "Enter a MIDI pitch from 0 to 127.");
-            track.notes.push_back({tick, ticksPerBeat, static_cast<std::uint8_t>(pitch), 96});
-            edit(window, [index] { project.tracks[index].notes.pop_back(); }, index);
-            status(window, L"Added a one-beat MIDI note.");
+        } else if ((id == noteId || id == updateNoteId || id == deleteNoteId) && track.instrument != Instrument::audio) {
+            auto& notes = track.notes;
+            const auto selected = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
+            if (id != noteId && (selected < 0 || static_cast<std::size_t>(selected) >= notes.size())) return;
+            if (id == deleteNoteId) {
+                const auto removed = notes[selected];
+                notes.erase(notes.begin() + selected);
+                edit(window, [index, selected, removed] {
+                    auto& original = project.tracks[index].notes;
+                    original.insert(original.begin() + selected, removed);
+                }, index);
+                status(window, L"Deleted MIDI note.");
+            } else {
+                auto note = id == noteId ? MidiNote{0, ticksPerBeat, 60, 96} : notes[selected];
+                note.tick = beatInput(window, beatId, false);
+                note.length = beatInput(window, lengthId, true);
+                note.pitch = static_cast<std::uint8_t>(value(window, pitchId, 0, 127, "Enter a MIDI pitch from 0 to 127."));
+                if (id == noteId) {
+                    notes.push_back(note);
+                    edit(window, [index] { project.tracks[index].notes.pop_back(); }, index);
+                    SendMessageW(field(window, noteListId), CB_SETCURSEL, notes.size() - 1, 0);
+                } else {
+                    const auto previous = notes[selected];
+                    notes[selected] = note;
+                    edit(window, [index, selected, previous] { project.tracks[index].notes[selected] = previous; }, index);
+                    SendMessageW(field(window, noteListId), CB_SETCURSEL, selected, 0);
+                }
+                pickNote(window);
+                status(window, id == noteId ? L"Added MIDI note." : L"Updated MIDI note.");
+            }
         } else if (id == moveId && !track.clips.empty()) {
             const auto previous = track.clips.front().tick;
-            track.clips.front().tick = value(window, beatId, 0, maxBars * beatsPerBar - 1,
-                                            "Enter a valid clip start beat.") * ticksPerBeat;
+            track.clips.front().tick = beatInput(window, beatId, false);
             edit(window, [index, previous] { project.tracks[index].clips.front().tick = previous; }, index);
             status(window, L"Moved the audio clip.");
         }
@@ -539,7 +660,7 @@ void createWorkspace(HWND window) {
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New"}, {demoId, L"Demo"}, {openId, L"Open..."},
          {saveId, L"Save as..."}, {exportId, L"Export..."}, {focusId, L"Focus"}, {recordId, L"Record"},
          {playId, L"Play"}, {stopId, L"Stop"}, {undoId, L"Undo"}, {tempoApplyId, L"Set"}, {commandId, L"Commands"},
-         {noteId, L"Add note"}, {moveId, L"Move audio clip"}, {removeId, L"Remove track..."},
+         {noteId, L"Add note"}, {updateNoteId, L"Update"}, {deleteNoteId, L"Delete"}, {moveId, L"Move audio clip"}, {removeId, L"Remove track..."},
          {importId, L"Import WAV..."}, {placeId, L"Place audio source"},
          {addTrackId, L"Add instrument"}, {volumeApplyId, L"Apply"}}) {
         addControl(window, entry.first, L"BUTTON", entry.second, WS_TABSTOP);
@@ -550,7 +671,12 @@ void createWorkspace(HWND window) {
     addControl(window, trackLabelId, L"STATIC", L"Selected track");
     addControl(window, trackListId, L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST);
     addControl(window, beatLabelId, L"STATIC", L"Start beat (0+)");
-    addControl(window, beatId, L"EDIT", L"0", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, beatId, L"EDIT", L"0", WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, lengthLabelId, L"STATIC", L"Length (beats)");
+    addControl(window, lengthId, L"EDIT", L"1", WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, noteListId, L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST);
+    addControl(window, queryId, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    SendMessageW(field(window, queryId), EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Find a command"));
     addControl(window, pitchLabelId, L"STATIC", L"MIDI pitch");
     addControl(window, pitchId, L"EDIT", L"60", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
     addControl(window, browserId, L"BUTTON", L"Browser", BS_GROUPBOX);
@@ -586,7 +712,16 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             const auto panel = arrangeRect(window);
             const auto x = GET_X_LPARAM(lParam);
             const auto y = GET_Y_LPARAM(lParam) - (panel.top + 58);
-            if (x >= panel.left && x < panel.right && y >= 0) {
+            const auto left = panel.left + 102;
+            const auto width = panel.right - left - 8;
+            if (x >= left && x < left + width && y >= -27 && y < 0 && !capture.active()) {
+                const auto frame = static_cast<double>(x - left) * totalFrames / width;
+                const auto ticks = static_cast<unsigned>(std::lround(frame * project.tempo / (60. * sampleRate))) * ticksPerBeat;
+                playFrom = frameAtTick(ticks, project.tempo);
+                if (playFrom >= totalFrames) playFrom = frameAtTick(ticks - ticksPerBeat, project.tempo);
+                if (audio.state() == Output::State::playing) audio.play(renderedSession(), playFrom);
+                InvalidateRect(window, &panel, FALSE);
+            } else if (x >= panel.left && x < panel.right && y >= 0) {
                 const int index = y / arrangementRowHeight(panel);
                 if (index < static_cast<int>(project.tracks.size())) {
                     SendMessageW(field(window, trackListId), CB_SETCURSEL, index, 0);
@@ -602,8 +737,11 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 refreshTrack(window);
                 const auto rect = arrangeRect(window);
                 InvalidateRect(window, &rect, FALSE);
+            } else if (id == noteListId && HIWORD(wParam) == CBN_SELCHANGE) {
+                pickNote(window);
             } else if (id != muteId || HIWORD(wParam) == BN_CLICKED) {
-                execute(window, id);
+                auto control = field(window, id);
+                if (!control || IsWindowEnabled(control)) execute(window, id);
             }
             return 0;
         }
@@ -664,21 +802,41 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         execute(window, noteId);
         const bool editOk = project.tracks.size() == 1 && project.tracks.front().notes.size() == 1 &&
             project.tracks.front().notes.front().tick == 2 * ticksPerBeat && project.tracks.front().notes.front().pitch == 64;
+        SetDlgItemTextW(window, beatId, L"3.5");
+        SetDlgItemTextW(window, lengthId, L"0.25");
+        SendMessageW(window, WM_COMMAND, updateNoteId, 0);
+        const auto edited = project.tracks.front().notes.front();
+        const bool updateOk = edited.tick == 3360 && edited.length == 240;
+        SendMessageW(window, WM_COMMAND, deleteNoteId, 0);
+        const bool deleteOk = project.tracks.front().notes.empty();
+        SendMessageW(window, WM_COMMAND, undoId, 0);
+        const bool undoOk = project.tracks.front().notes.size() == 1 && project.tracks.front().notes.front() == edited;
         const auto before = project;
         execute(window, focusId);
-        const bool viewOk = project == before && IsWindowEnabled(field(window, stopId));
-        execute(window, undoId);
-        const bool undoOk = project.tracks.front().notes.empty();
+        execute(window, toggleBrowserId);
+        execute(window, toggleInspectorId);
+        execute(window, toggleMixerId);
+        execute(window, resetLayoutId);
+        const bool viewOk = project == before && inspectorShown && browserShown && mixerShown &&
+                            !focused && IsWindowEnabled(field(window, stopId));
+        const auto area = arrangeRect(window);
+        const auto x = area.left + 102 + (area.right - area.left - 110) / 2;
+        SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, area.top + 42));
+        const bool locateOk = playFrom == frameAtTick(project.bars * beatsPerBar * ticksPerBeat / 2, project.tempo);
         DestroyWindow(window);
-        return editOk && viewOk && undoOk ? 0 : 1;
+        return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'O', openId},
-                         {FVIRTKEY | FCONTROL | FSHIFT, 'S', saveId}, {FVIRTKEY | FCONTROL, 'F', commandId}};
+                         {FVIRTKEY | FCONTROL | FSHIFT, 'S', saveId}, {FVIRTKEY | FCONTROL, 'F', queryFocusId}};
     const auto accelerator = CreateAcceleratorTableW(shortcuts, static_cast<int>(std::size(shortcuts)));
     MSG message{};
     int result;
     while ((result = GetMessageW(&message, nullptr, 0, 0)) > 0) {
+        if (message.hwnd == field(window, queryId) && message.message == WM_KEYDOWN && message.wParam == VK_RETURN) {
+            SendMessageW(window, WM_COMMAND, commandId, 0);
+            continue;
+        }
         if (accelerator && TranslateAcceleratorW(window, accelerator, &message)) continue;
         if (!IsDialogMessageW(window, &message)) {
             TranslateMessage(&message);

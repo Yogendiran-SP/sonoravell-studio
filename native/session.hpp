@@ -43,7 +43,7 @@ class PlaybackMixer {
 public:
     static constexpr unsigned muteRampFrames = sampleRate / 200;
 
-    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes);
+    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame = 0);
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
     bool finished() const noexcept;

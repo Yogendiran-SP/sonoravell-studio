@@ -12,8 +12,8 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 | Workspace | What you can do |
 | --- | --- |
 | Transport | Record from the default Windows input, play, stop, change tempo, and undo the last edit. Stop finalizes a recording as a new audio track. |
-| Arrange | See bars, MIDI notes, audio clips, and the playback cursor. Click a track lane to select it. |
-| Inspector | Set a start beat, add a one-beat MIDI note by pitch, move the first audio clip, or remove the selected track. |
+| Arrange | See bars, MIDI notes, audio clips, and the playback cursor. Click the ruler to start playback from a beat, or click a track lane to select it. |
+| Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move the first audio clip or remove the selected track. |
 | Browser | Import a PCM WAV, create an instrument track, or place an existing Audio Pool source on another track. |
 | Mixer | Set the selected track's level and mute or unmute it during playback. |
 | Focus | Expand Arrange and keep transport and file controls visible. |
@@ -24,8 +24,9 @@ supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. The native Session
 format has its own version and extension. Older browser project files require
 a separate migration path.
 
-The command menu is available with Ctrl+F. Ctrl+O opens a Session,
-Ctrl+Shift+S opens Save As, and Ctrl+Z undoes the last edit.
+Use Ctrl+F to focus **Find a command**, type a term, and press Enter to see matching
+commands. It also provides separate panel toggles and **Reset workspace**. Ctrl+O
+opens a Session, Ctrl+Shift+S opens Save As, and Ctrl+Z undoes the last edit.
 
 ## Build and test
 
