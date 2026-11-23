@@ -38,6 +38,7 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install numpy
       - name: Verify launcher and standalone build
+        shell: bash
         run: |
           python tests/check_local.py
           python build.py

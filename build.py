@@ -6,7 +6,8 @@ import re
 root = Path(__file__).resolve().parent
 source = root / "src"
 html = (source / "index.html").read_text(encoding="utf-8")
-icon = base64.b64encode((source / "assets" / "app-icon.svg").read_bytes()).decode("ascii")
+icon_svg = (source / "assets" / "app-icon.svg").read_text(encoding="utf-8")
+icon = base64.b64encode(icon_svg.encode("utf-8")).decode("ascii")
 html = html.replace("assets/app-icon.svg", "data:image/svg+xml;base64," + icon)
 css = (source / "studio.css").read_text(encoding="utf-8")
 atlas = base64.b64encode((source / "assets/plug-in-atlas.webp").read_bytes()).decode("ascii")
@@ -21,4 +22,4 @@ html = re.sub(
 scripts = re.findall(r"<script defer>.*?</script>", html, re.S)
 html = re.sub(r"^[ \t]*<script defer>.*?</script>[ \t]*$", "", html, flags=re.S | re.M)
 html = html.replace("</body>", "\n".join(scripts).replace("<script defer>", "<script>") + "\n</body>")
-(root / "Sonoravell.html").write_text(html, encoding="utf-8")
+(root / "Sonoravell.html").write_bytes(html.encode("utf-8"))
