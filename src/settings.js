@@ -8,7 +8,7 @@
   const categories = [
     ['general', 'General', [
       ['startup', 'General', [
-        select('startup', 'At startup', 'restore', values([['restore', 'Reopen last session'], ['blank', 'New blank session'], ['demo', 'After Hours demo']])),
+        select('startup', 'At startup', 'start', values([['start','Start page'],['restore', 'Reopen last session'], ['blank', 'New blank session'], ['demo', 'After Hours demo']])),
         toggle('autosave', 'Autosave sessions', true, 'Store a local recovery copy in this browser.'),
         number('autosaveDelay', 'Save after idle (seconds)', .5, .5, 60, .5),
         number('newTempo', 'New session tempo (BPM)', 112, 30, 320, .1),

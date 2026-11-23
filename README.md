@@ -1,4 +1,4 @@
-# Sonoravell Studio 1.0.1
+# Sonoravell Studio 1.0.2
 
 Sonoravell Studio is a browser-based digital audio workstation in active development. Version 1.0 introduces a dedicated MIDI editor with note properties, scale tools, and a velocity lane, plus editor-aware clipboard shortcuts. Earlier Soundweave sessions remain importable. The included *After Hours* session contains instruments, an FX return, and two independent cue feeds.
 
@@ -9,6 +9,41 @@ The project is distributed under the [MIT License](LICENSE).
 Extract the ZIP, then open `Start-Sonoravell.cmd` in Windows. With Python 3 installed, the launcher starts `http://127.0.0.1:8765/` and opens a dedicated Edge or Chrome app window when available on Windows. The title follows the current Session name. Other launches use the default browser. Keep the console open. Use Chrome or Edge for browser audio and MIDI features. On other platforms, run `python3 launch.py`.
 
 Opening `Sonoravell.html` directly runs the browser tools. The system plug-in scan, optional native plug-in rendering, and FFmpeg codecs use the localhost launcher. Internet access is unnecessary for an installed setup.
+
+## Workspace map
+
+Fender Studio Pro calls its top-level pages **Start**, **Session**, **Mastering**, and **Show**. In earlier Studio One versions, **Song** referred to the production editor and **Project** referred to the mastering workspace. Sonoravell uses the current domain names and its own interface and assets.
+
+| Workspace | Sonoravell 1.0.2 workflow |
+| --- | --- |
+| **Start** | Choose **New Document**, select a Session, Mastering, or Show template, and set name and artist. Find, filter, or pin recent documents, open a portable file, edit the local Artist Profile, check import and export activity under Transfers, and access Audio Setup or External Devices. Use **Quick Switch** to return to another open document. |
+| **Session** | Record audio or MIDI, arrange on the timeline, and use the Inspector, Browser, Audio Editor, Note Editor, Console, Automation, Signal Flow, and reference video. Open the Launcher, Scratch Pads, Pattern Editor, Score Editor, Lyrics Display, Channel Overview, and Performance Monitor from **View**. Use **Session → Add to Mastering Project** or **Add to Show** to render a stereo copy of the current mix into another workspace. |
+| **Mastering** | Import tracks or add the current Session. Reorder the Track Column and audition the Track Lane. Adjust metadata, trims, fades, gap, track gain, output gain, and preset insert chains. Analyze sample peak and RMS. **Digital Release** renders individual masters and a metadata file into a ZIP. |
+| **Show** | Build a Setlist with backing tracks, item tempo and meter, pauses, and playback modes. Configure Players, per-item Patches, live input monitoring, video, and Sections. Open **Performance View** for larger controls, Patches, Sections, Lyrics, and Video. Select a virtual Player to play it with the QWERTY keys, or enable **MIDI In**. |
+| **File utilities** | Open or save portable documents, export Session mixdowns and stems, or run **Audio Batch Converter** on multiple source files. The standalone build supports Wave output. Installed launcher codecs add their supported formats. |
+
+### Session companion views
+
+- **Launcher** captures a selected arrangement event into a Cell on the same track. Launch a Cell or a whole Scene for audition, queue Scenes in a Playlist, or insert the ordered Events at the Session playhead.
+- **Scratch Pads** copy selected events into a separate list of editable beat offsets. Preview the variation or insert it back into the Session.
+- **Pattern Editor** uses a 16th-note grid for drum or pitched steps. Read the selected MIDI part into the grid, audition the pattern, and insert a MIDI part.
+- **Score Editor** displays the selected Instrument Part on a single staff. Select a note to edit pitch, position, duration, or velocity. Add or remove notes directly.
+- **Lyrics Display** follows the Session playhead. **Channel Overview** exposes routing, level, polarity, Inserts, and Sends for the selected channel. **Performance Monitor** reports engine configuration and source audio size, and offers insert bypass controls.
+
+### Portable files and scope
+
+**Save Document** embeds the media used by a Session (`.sonoravell`), Mastering Project (`.sonoravell-master`), or Show (`.sonoravell-show`). Start remembers local document copies in the current browser. The localhost launcher gives that storage a consistent origin. Switching between pages leaves the current Session in memory. A Session sent to Mastering or Show is a rendered copy. Exporting again is necessary to include later Session edits.
+
+Sonoravell's Launcher uses a separate editor and preview transport. Scratch Pads use a list of copied events. The Score Editor supports basic single-staff editing. Mastering analysis covers sample peak and RMS. Live Show playback uses browser audio and device permissions. The reference product also documents concurrent Launcher and Timeline playback, fuller notation engraving, integrated loudness and CD/DDP tools, remote control surfaces, and vendor cloud sharing, publishing, content, and account services. These workflows are outside the current implementation.
+
+Reference pages
+
+- [Fender Studio Pro User Guide, Pages and Smart Templates](https://downloads.ctfassets.net/mdpgzc1lmx9t/4a95Tj0SfvdaC3VC5IvVMG/7c6732e98c4f8b6b097f7907982d88a6/UM_Fender-Studio-Pro_EN.pdf)
+- [Fender Studio Pro, Launcher](https://fenderstudiopromanual.fender.com/en/Content/Arranging_Topics/The%20Launcher.htm)
+- [Fender Studio Pro, Score Editor](https://fenderstudiopromanual.fender.com/en/Content/Score_Editor_Topics/Chapter-Score_Editor.htm)
+- [Fender Studio Pro, Mastering](https://fenderstudiopromanual.fender.com/en/Content/Mastering_Topics/Chapter-Mastering.htm)
+- [Fender Studio, Mastering and Release tutorial](https://www.youtube.com/watch?v=njCaNxj2L9M)
+- [Fender Studio Pro, Performance View](https://fenderstudiopromanual.fender.com/en/Content/Show_Topics/Show_Perform.htm)
 
 ## First tests
 

@@ -33,7 +33,7 @@ class Element {
 const sources=path.resolve(__dirname,'../src')+path.sep, html=fs.readFileSync(sources+'index.html','utf8');
 const elements=Object.fromEntries([...html.matchAll(/ id="([a-z-]+)"/g)].map(([,id])=>[id,new Element(id)]));
 const get=id=>elements[id]||null;
-const prefs=new Map([['sw-keymap',JSON.stringify({'track-remove':'Delete',delete:''})]]),documentHandlers=new Map();
+const prefs=new Map([['sw-preferences',JSON.stringify({startup:'demo'})],['sw-keymap',JSON.stringify({'track-remove':'Delete',delete:''})]]),documentHandlers=new Map();
 const document={
   getElementById:get,querySelectorAll(){return [];},querySelector(){return null;},
   addEventListener(type,handler){
@@ -49,11 +49,11 @@ const context=vm.createContext({
   localStorage:{getItem:k=>prefs.get(k),setItem:(k,v)=>prefs.set(k,v)},setTimeout:()=>0,clearTimeout(){},
   confirm:()=>true,prompt:()=>null,requestAnimationFrame:()=>1,cancelAnimationFrame(){},setInterval:()=>1,clearInterval(){}
 });
-for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions']){
+for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions','workspace-documents','workspace-views','workspace-pages','session-views']){
   vm.runInContext(fs.readFileSync(sources+source+'.js','utf8'),context,{filename:source+'.js'});
 }
-const app=fs.readFileSync(sources+'app.js','utf8').replace("if(prefs.startup==='restore') restore();",
-  'globalThis.probe={setTab,chooseNotes,driveClipboard,setNoteProperty,editNotes,showGlobalLane,openGlobalEntry,saveGlobalItem,trackHeight,startGesture,moveGesture,finishGesture,zoom:()=>zoom,ensureAudio,enableAudioMonitor,toggleMonitor,insertTracks,canUseSnap,changeParam,getSnap:()=>snap,selectTrack,selectedClips,editorClip,openTrackMenu,syncToolModifier,removeTracks,beginRecord,finishAudioTake,stopAction,stopRecording,midiInputStart,midiInputStop,registerAsset,seek,recorder:()=>recorder,getMedia:()=>media,command,selectMany,doAction,changeValue,openObjectMenu,applyMacroToSelection,knobNumeric,resizeDockView,position:()=>playhead,allClips,renderKeys,setKeyboard,applyBrowserItem,pluginOpen,spatialOpen,getProject:()=>p,getPreferences:()=>prefs};');
+const app=fs.readFileSync(sources+'app.js','utf8').replace("if(prefs.startup==='restore'||prefs.startup==='start') restore();",
+  'globalThis.probe={workspace:workspacePages,setTab,chooseNotes,driveClipboard,setNoteProperty,editNotes,showGlobalLane,openGlobalEntry,saveGlobalItem,trackHeight,startGesture,moveGesture,finishGesture,zoom:()=>zoom,ensureAudio,enableAudioMonitor,toggleMonitor,insertTracks,canUseSnap,changeParam,getSnap:()=>snap,selectTrack,selectedClips,editorClip,openTrackMenu,syncToolModifier,removeTracks,beginRecord,finishAudioTake,stopAction,stopRecording,midiInputStart,midiInputStop,registerAsset,seek,recorder:()=>recorder,getMedia:()=>media,command,selectMany,doAction,changeValue,openObjectMenu,applyMacroToSelection,knobNumeric,resizeDockView,position:()=>playhead,allClips,renderKeys,setKeyboard,applyBrowserItem,pluginOpen,spatialOpen,getProject:()=>p,getPreferences:()=>prefs};');
 vm.runInContext(app,context,{filename:'app.js'});
 const probe=context.probe;
 assert.equal(document.title,'After Hours — Sonoravell Studio');
@@ -628,5 +628,51 @@ function verifyPianoEditorAndClipboard(){
   T.validateProject(p);
   console.log('Piano properties and selection shortcuts, scoped note and event clipboards, inserts, automation, and MIDI controller points passed.');
 }
+async function verifyWorkspaceViews(){
+  const original=probe.getProject(), root=get('workspace-content');
+  const title=document.title;
+  assert.equal(probe.workspace.switchPage('start'),true);
+  assert.match(root.innerHTML,/Recent Files/);
+  assert.match(root.innerHTML,/Create|Record and Mix/);
+  assert.equal(document.title,'Start — Sonoravell Studio');
+  probe.command('show-mastering');
+  assert.match(root.innerHTML,/Track Column/);
+  assert.match(root.innerHTML,/Digital Release/);
+  assert.equal(probe.getProject(),original,'Mastering must keep the Session open');
+  probe.command('show-live');
+  assert.match(root.innerHTML,/Setlist Inspector/);
+  assert.match(root.innerHTML,/Performance View/);
+  assert.equal(probe.getProject(),original,'Show must keep the Session open');
+  probe.command('quick-switch');
+  assert.equal(get('workspace-switch').open,true);
+  assert.match(get('workspace-switch-list').innerHTML,/Untitled Mastering Project/);
+  get('workspace-switch-close').click();
+  probe.command('show-session');
+  assert.equal(document.title,title);
+  assert.equal(root.hidden,true);
+  probe.command('launcher-view');
+  assert.match(get('session-view-body').innerHTML,/Launch/);
+  assert.equal(probe.getProject().launcher.scenes.length,8);
+  get('session-view-close').click();
+  for(const [command,markup] of [['scratch-view',/Scratch Pad/],['score-view',/Select an Instrument Part|clef/],
+    ['patterns-view',/Select an Instrument Track|Insert Pattern/],['lyrics-view',/Add lyric|session-lyrics/],
+    ['monitor-view',/Audio engine/],['channel-view',/Input Trim/]]){
+    probe.command(command);
+    assert.match(get('session-view-body').innerHTML,markup,command);
+    get('session-view-close').click();
+  }
+  press(document.body,'n',{ctrlKey:true});
+  assert.equal(get('workspace-new').open,true);
+  get('workspace-new-name').value='Regression session';
+  get('workspace-new-form').events.submit({preventDefault(){}});
+  await Promise.resolve();
+  assert.equal(probe.getProject().name,'Regression session');
+  assert.equal(probe.getProject().tracks.length,0);
+  assert.notEqual(probe.getProject(),original);
+  probe.command('quick-switch');
+  assert.ok(get('workspace-switch-list').innerHTML.includes(original.name));
+  get('workspace-switch-close').click();
+  console.log('Four workspace pages, New Document, Quick Switch, and seven Session companion views passed using DOM test doubles.');
+}
 verifyDisplayModes().then(verifyTrackEditingAndRecording).then(verifyStudioControls).then(verifyTimelineControls)
-  .then(verifyPianoEditorAndClipboard).catch(error=>{console.error(error);process.exitCode=1;});
+  .then(verifyPianoEditorAndClipboard).then(verifyWorkspaceViews).catch(error=>{console.error(error);process.exitCode=1;});

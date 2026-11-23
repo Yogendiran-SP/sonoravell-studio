@@ -301,6 +301,7 @@ Object.assign(SW, (() => {
     const folder=folders(p).find(f=>f.bus===id);
     if(folder)delete folder.bus;
     p.tracks=p.tracks.filter(t=>t.id!==id);
+    SW.purgeTrackIdeas?.(p,id);
     for(const key of Object.keys(p.flowPositions||{}))if(key.startsWith(id+':'))delete p.flowPositions[key];
     for(const t of p.tracks){
       if(t.out===id){

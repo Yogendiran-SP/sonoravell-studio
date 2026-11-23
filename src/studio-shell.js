@@ -1,14 +1,16 @@
 (function (SW) {
   const groups = [
-    ['File', ['new','open','demo',null,'save',['save-copy','Save a copy…'],null,'import-media','import-video','export','export-stems','export-midi']],
+    ['File', ['new','open','demo',null,'save',['save-copy','Save a copy…'],null,'import-media','import-video','export','export-stems','export-midi','audio-batch']],
     ['Edit', ['undo','redo',null,'cut','copy','paste','paste-original','delete',null,'all','select-track','select-muted','invert-selection','clear-selection','snap-toggle','find']],
-    ['Session', ['session-setup','session-io','marker',null,'import-media','export','export-stems','export-selection','export-midi']],
+    ['Session', ['session-setup','session-io','marker',null,'import-media','export','export-stems','export-selection','export-midi',null,'add-to-mastering','add-to-show']],
     ['Track', ['insert-track','add-bus','add-fx',null,'track-duplicate','track-remove','track-remove-complete','track-arm','track-mute','track-solo','track-icon']],
     ['Event', ['split','duplicate','repeat','merge','quantize','align',null,'mute-event','lock-event','nudge-left','nudge-right','split-range','trim-range','delete-time']],
     ['Audio', ['normalize','reverse','detect-stops',null,'fade-both','crossfade','reset-fades','slip-left','slip-right']],
     ['Transport', ['transport','stop','record',null,'home','end','loop','range-loop','click']],
-    ['View', ['edit','mixer','browser','inspector','automation','routing','keyboard','video-panel','arrange-macros',null,'zoom-in','zoom-out','zoom-fit','zoom-vertical-in','zoom-vertical-out']],
-    ['Window', ['focus-arrange','detach-panel','fullscreen-panel','detach-browser','fullscreen-browser',null,'fullscreen','reset-layout']],
+    ['View', ['edit','mixer','browser','inspector','automation','routing','keyboard','video-panel','arrange-macros',null,
+      'launcher-view','scratch-view','patterns-view','score-view','lyrics-view','channel-view','monitor-view',
+      null,'zoom-in','zoom-out','zoom-fit','zoom-vertical-in','zoom-vertical-out']],
+    ['Window', ['show-start','show-session','show-mastering','show-live','quick-switch',null,'focus-arrange','detach-panel','fullscreen-panel','detach-browser','fullscreen-browser',null,'fullscreen','reset-layout']],
     ['Studio', ['preferences','settings-audio','settings-midi','settings-keys','macro-organizer',null,'import-keys','export-keys']],
     ['Help', ['help','find','online-reference','workflow-tutorial','about']]
   ];

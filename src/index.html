@@ -7,12 +7,22 @@
   <title>Sonoravell Studio</title>
   <link rel="icon" type="image/svg+xml" href="assets/app-icon.svg">
   <link rel="stylesheet" href="studio.css">
-  <script defer src="model.js"></script><script defer src="arrangement.js"></script><script defer src="formats.js"></script><script defer src="spatial.js"></script><script defer src="keyscheme.js"></script><script defer src="studio-panels.js"></script><script defer src="patch.js"></script><script defer src="patch-panel.js"></script><script defer src="audio.js"></script><script defer src="plugin-visuals.js"></script><script defer src="recording.js"></script><script defer src="workflows.js"></script><script defer src="note-editor.js"></script><script defer src="settings.js"></script><script defer src="studio-shell.js"></script><script defer src="reference-video.js"></script><script defer src="panel-windows.js"></script><script defer src="midi-expression.js"></script><script defer src="track-icons.js"></script><script defer src="editor-actions.js"></script><script defer src="app.js"></script>
+  <script defer src="model.js"></script><script defer src="arrangement.js"></script><script defer src="formats.js"></script><script defer src="spatial.js"></script><script defer src="keyscheme.js"></script><script defer src="studio-panels.js"></script><script defer src="patch.js"></script><script defer src="patch-panel.js"></script><script defer src="audio.js"></script><script defer src="plugin-visuals.js"></script><script defer src="recording.js"></script><script defer src="workflows.js"></script><script defer src="note-editor.js"></script><script defer src="settings.js"></script><script defer src="studio-shell.js"></script><script defer src="reference-video.js"></script><script defer src="panel-windows.js"></script><script defer src="midi-expression.js"></script><script defer src="track-icons.js"></script><script defer src="editor-actions.js"></script><script defer src="workspace-documents.js"></script><script defer src="workspace-views.js"></script><script defer src="workspace-pages.js"></script><script defer src="session-views.js"></script><script defer src="app.js"></script>
 </head>
 <body>
   <nav id="studio-menu" class="studio-menu" role="menubar" aria-label="Studio commands"></nav>
   <div id="studio-menu-popup" class="studio-menu-popup" role="menu" hidden></div>
-  <main>
+  <nav id="workspace-nav" class="workspace-nav" aria-label="Workspace pages">
+    <img src="assets/app-icon.svg" alt="" width="23" height="23">
+    <button type="button" data-workspace="start">Start</button>
+    <button type="button" data-workspace="session" aria-current="page">Session</button>
+    <button type="button" data-workspace="mastering">Mastering</button>
+    <button type="button" data-workspace="show">Show</button>
+    <span class="spacer"></span>
+    <button type="button" data-ws-action="quick-switch" title="Switch between open documents">Quick Switch</button>
+  </nav>
+  <section id="workspace-content" class="workspace-content" aria-label="Studio workspace" hidden></section>
+  <main id="session-workspace">
     <section class="arrange-frame" aria-label="Arrangement">
       <div class="workspace-toolbar">
         <button id="insert-track" type="button" title="Insert Track (T)" aria-label="Insert Track"><span aria-hidden="true">+</span> Insert Track</button>
@@ -137,7 +147,52 @@
     <div id="macro-body"></div>
   </dialog>
   <input hidden type="file" id="import-files" multiple accept="audio/*,.wav,.mp3,.flac,.ogg,.opus,.m4a,.aac,.aiff,.aif,.webm,.mid,.midi">
-  <input hidden type="file" id="open-file" accept=".sonoravell,.soundweave,.json">
+  <input hidden type="file" id="open-file" accept=".sonoravell,.sonoravell-master,.sonoravell-show,.soundweave,.json">
+  <input hidden type="file" id="workspace-audio-file" accept="audio/*,.wav,.aiff,.aif,.flac,.ogg,.m4a,.mp3,.opus,.caf" multiple>
+  <input hidden type="file" id="workspace-video-file" accept="video/mp4,video/webm,video/ogg,video/quicktime">
+  <dialog id="workspace-new" class="studio-dialog workspace-dialog" aria-labelledby="workspace-new-title">
+    <header><h2 id="workspace-new-title">New Document</h2><button type="button" id="workspace-new-close" aria-label="Close New Document">×</button></header>
+    <form id="workspace-new-form" class="ws-form">
+      <label class="ws-span">Template<select id="workspace-template"></select></label>
+      <p class="ws-span" id="workspace-new-description"></p>
+      <label>Name<input id="workspace-new-name" maxlength="120"></label>
+      <label>Artist<input id="workspace-new-artist" maxlength="100"></label>
+      <div class="ws-span ws-form" id="workspace-session-fields">
+        <label>Tempo (BPM)<input id="workspace-new-tempo" type="number" min="30" max="320" step=".1"></label>
+        <label>Beats per bar<input id="workspace-new-meter" type="number" min="2" max="12" step="1"></label>
+      </div>
+      <div class="ws-span ws-actions"><button type="submit" class="accent">Create</button></div>
+    </form>
+  </dialog>
+  <dialog id="workspace-switch" class="studio-dialog workspace-dialog" aria-labelledby="workspace-switch-title">
+    <header><h2 id="workspace-switch-title">Quick Switch</h2><button type="button" id="workspace-switch-close" aria-label="Close Quick Switch">×</button></header>
+    <div id="workspace-switch-list"></div>
+  </dialog>
+  <dialog id="workspace-release" class="studio-dialog workspace-dialog" aria-labelledby="workspace-release-title">
+    <header><h2 id="workspace-release-title">Digital Release</h2><button type="button" id="workspace-release-close" aria-label="Close Digital Release">×</button></header>
+    <form id="workspace-release-form" class="ws-form">
+      <label>Format<select id="workspace-release-format"></select></label>
+      <label>Sample rate<select id="workspace-release-rate"><option value="44100">44.1 kHz</option><option value="48000">48 kHz</option><option value="96000">96 kHz</option></select></label>
+      <label>Resolution<select id="workspace-release-bits"><option value="16">16-bit</option><option value="24">24-bit</option><option value="32">32-bit float</option></select></label>
+      <label class="ws-check"><input type="checkbox" id="workspace-release-dither"> Dither PCM output</label>
+      <div class="ws-span ws-actions"><button id="workspace-release-submit" type="submit" class="accent">Export Digital Release</button></div>
+    </form>
+  </dialog>
+  <dialog id="session-view-dialog" class="studio-dialog session-view-dialog" aria-labelledby="session-view-title">
+    <header><h2 id="session-view-title"></h2><button type="button" id="session-view-close" aria-label="Close Session view">×</button></header>
+    <div id="session-view-body"></div>
+  </dialog>
+  <dialog id="batch-dialog" class="studio-dialog workspace-dialog" aria-labelledby="batch-title">
+    <header><h2 id="batch-title">Audio Batch Converter</h2><button type="button" id="batch-close" aria-label="Close Audio Batch Converter">×</button></header>
+    <form id="batch-form" class="ws-form">
+      <label class="ws-span">Source audio files<input id="batch-input" type="file" accept="audio/*,.wav,.aiff,.flac,.mp3,.ogg,.m4a" multiple required></label>
+      <label>Format<select id="batch-format"></select></label>
+      <label>Sample rate<select id="batch-rate"><option value="44100">44.1 kHz</option><option value="48000" selected>48 kHz</option><option value="96000">96 kHz</option></select></label>
+      <label>Resolution<select id="batch-resolution"><option value="16">16-bit</option><option value="24" selected>24-bit</option><option value="32">32-bit float</option></select></label>
+      <label class="ws-check"><input type="checkbox" id="batch-dither"> Dither PCM output</label>
+      <div class="ws-span ws-actions"><button id="batch-submit" type="submit" class="accent">Convert Files</button></div>
+    </form>
+  </dialog>
   <input hidden type="file" id="sample-file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a">
   <dialog id="input-dialog"><form method="dialog">
     <header><h2>Audio input</h2><button aria-label="Close input selection" value="cancel">×</button></header>

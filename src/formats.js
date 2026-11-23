@@ -193,10 +193,11 @@ Object.assign(SW, (() => {
         }
       }
     }
+    assertion(!SW.validSessionIdeas||SW.validSessionIdeas(p),'Launcher or Scratch Pad');
     return p;
   }
-  function decodeProject(text) {
-    const obj=JSON.parse(text);
+  function decodeProject(input) {
+    const obj=typeof input==='string'?JSON.parse(input):input;
     if(!['Sonoravell','Soundweave'].includes(obj?.format)||!obj.media||typeof obj.media!=='object') throw Error('Select a Sonoravell project file.');
     const p=validateProject(obj.project);
     const raw=new Map(Object.keys(p.assets).map(id=>{
@@ -323,11 +324,14 @@ Object.assign(SW, (() => {
     return Uint8Array.from(arr);
   }
   function zip(entries) {
+    if(entries.length>65535)throw Error('This ZIP contains too many files.');
     const table=Uint32Array.from({length:256},(_,i)=>{for(let j=0;j<8;j++) i=(i&1)?0xedb88320^(i>>>1):i>>>1;return i>>>0;});
     const parts=[], central=[];
     let offset=0, centralLength=0;
     for(const [name, buffer] of entries) {
       const filename=encode.encode(name), data=new Uint8Array(buffer);
+      if(filename.length>65535||offset+centralLength+data.length+76+filename.length*2>0xffffffff-22)
+        throw Error('This ZIP would exceed 4 GiB. Export fewer files at a time.');
       let crc=0xffffffff;
       for(const byte of data) crc=table[(crc^byte)&255]^(crc>>>8);
       crc=(crc^0xffffffff)>>>0;
@@ -346,5 +350,5 @@ Object.assign(SW, (() => {
     return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
   }
   const cleanName = value => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'-').trim().replace(/[. ]+$/,'').slice(0,110)||'Sonoravell';
-  return {wav,encodeProject,decodeProject,validateProject,parseMidi,midi,zip,cleanName};
+  return {bytesToBase64,base64ToBytes,wav,encodeProject,decodeProject,validateProject,parseMidi,midi,zip,cleanName};
 })());
