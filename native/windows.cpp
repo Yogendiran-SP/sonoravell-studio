@@ -10,6 +10,7 @@
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
 #include "windows_capture.hpp"
+#include "windows_devices.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -34,7 +35,7 @@ enum ControlId {
     tempoApplyId, commandId, focusId, inspectorId, trackListId, trackLabelId, beatLabelId, beatId,
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
-    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId,
+    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId, deviceId, selectInputId, selectOutputId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -42,6 +43,7 @@ Project project = afterHoursProject();
 std::unique_ptr<SessionAudio> prepared;
 Output audio;
 Capture capture;
+EndpointChoice inputChoice, outputChoice;
 std::function<void()> undo;
 bool dirty = false;
 bool autosavePending = false;
@@ -99,8 +101,10 @@ void layout(HWND window) {
     place(tempoLabelId, 350, 53, 82, 20);
     place(tempoId, 430, 47, 52, 26);
     place(tempoApplyId, 490, 47, 57, 28);
-    place(queryId, width - 249, 47, 143, 27);
-    place(commandId, width - 99, 47, 84, 28);
+    const int queryWidth = std::clamp(width - 718, 52, 143);
+    place(deviceId, 549, 47, 66, 28);
+    place(queryId, width - 96 - queryWidth, 47, queryWidth, 27);
+    place(commandId, width - 91, 47, 78, 28);
 
     const auto show = [&](std::initializer_list<int> ids, bool visible) {
         for (int id : ids) ShowWindow(field(window, id), visible && !focused ? SW_SHOW : SW_HIDE);
@@ -315,7 +319,7 @@ void refresh(HWND window, int index) {
     if (!project.assets.empty()) SendMessageW(sources, LB_SETCURSEL, 0, 0);
     EnableWindow(field(window, placeId), !capture.active() && !project.assets.empty());
     SetDlgItemInt(window, tempoId, project.tempo, FALSE);
-    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, tempoApplyId, recoverId}) {
+    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, tempoApplyId, recoverId, deviceId}) {
         EnableWindow(field(window, id), !capture.active());
     }
     EnableWindow(field(window, undoId), !capture.active() && static_cast<bool>(undo));
@@ -515,7 +519,7 @@ void showCommands(HWND window) {
     };
     const auto query = lowercase(queryText);
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
-         {openId, L"Open Session..."}, {restoreSessionId, L"Restore Session checkpoint..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
+         {openId, L"Open Session..."}, {deviceId, L"Audio devices..."}, {restoreSessionId, L"Restore Session checkpoint..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
          {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
          {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
          {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
@@ -531,6 +535,52 @@ void showCommands(HWND window) {
     GetWindowRect(field(window, commandId), &rect);
     TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_TOPALIGN, rect.right, rect.bottom, 0, window, nullptr);
     DestroyMenu(menu);
+}
+
+void chooseAudioDevice(HWND window, AudioDirection direction) {
+    const auto devices = listWindowsAudioEndpoints(direction);
+    auto& choice = direction == AudioDirection::input ? inputChoice : outputChoice;
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    AppendMenuW(menu, MF_STRING | (!choice ? MF_CHECKED : 0), 1, L"Windows default");
+    for (std::size_t index = 0; index < devices.size(); ++index) {
+        const auto& device = devices[index];
+        auto label = device.name;
+        // Win32 menus treat ampersand as an accelerator marker.
+        for (std::size_t at = 0; (at = label.find(L'&', at)) != label.npos; at += 2) label.insert(at, 1, L'&');
+        const auto ambiguous = std::ranges::count(devices, device) > 1;
+        AppendMenuW(menu, MF_STRING | (ambiguous ? MF_GRAYED : 0) | (choice == device ? MF_CHECKED : 0),
+                    index + 2, label.c_str());
+    }
+    RECT toggle{};
+    GetWindowRect(field(window, deviceId), &toggle);
+    const auto selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, toggle.left, toggle.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (!selected || capture.active()) return;
+    EndpointChoice next;
+    if (selected > 1) next = devices.at(selected - 2);
+    resolveWindowsAudioEndpoint(direction, next);
+    audio.stop();
+    const auto rect = arrangeRect(window);
+    InvalidateRect(window, &rect, FALSE);
+    choice = std::move(next);
+    const std::wstring kind = direction == AudioDirection::input ? L"Input: " : L"Output: ";
+    status(window, (kind + (choice ? choice->name : L"Windows default")).c_str());
+}
+
+void showAudioDevices(HWND window) {
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    const std::wstring input = L"Choose input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
+    const std::wstring output = L"Choose output  (" + (outputChoice ? outputChoice->name : L"Windows default") + L")";
+    AppendMenuW(menu, MF_STRING, selectInputId, input.c_str());
+    AppendMenuW(menu, MF_STRING, selectOutputId, output.c_str());
+    RECT toggle{};
+    GetWindowRect(field(window, deviceId), &toggle);
+    const auto selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, toggle.left, toggle.bottom, 0, window, nullptr);
+    DestroyMenu(menu);
+    if (selected == selectInputId) chooseAudioDevice(window, AudioDirection::input);
+    if (selected == selectOutputId) chooseAudioDevice(window, AudioDirection::output);
 }
 
 void execute(HWND window, int id) {
@@ -562,6 +612,7 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == deviceId) { showAudioDevices(window); return; }
     if (id == newId || id == demoId) {
         if (discardEdits(window)) {
             installProject(window, id == newId ? Project{} : afterHoursProject());
@@ -607,7 +658,7 @@ void execute(HWND window, int id) {
             status(window, L"Exported 48 kHz stereo WAV.");
         }
     } else if (id == playId) {
-        audio.play(renderedSession(), playFrom);
+        audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
         status(window, L"Playing Session.");
     } else if (id == recoverId) {
         auto directory = takeRecoveryDirectory();
@@ -623,7 +674,7 @@ void execute(HWND window, int id) {
         const auto capacity = recordingCapacity(project, takeTick);
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
         audio.stop();
-        capture.start(capacity, takeTick);
+        capture.start(capacity, takeTick, resolveWindowsAudioEndpoint(AudioDirection::input, inputChoice));
         refresh(window, selectedTrack(window));
         status(window, L"Recording to local recovery storage. Press Stop to finish the take.");
     } else if (id == importId) {
@@ -721,7 +772,7 @@ void createWorkspace(HWND window) {
     addControl(window, titleId, L"STATIC", L"");
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New"}, {demoId, L"Demo"}, {openId, L"Open..."},
          {saveId, L"Save as..."}, {exportId, L"Export..."}, {focusId, L"Focus"}, {recordId, L"Record"},
-         {playId, L"Play"}, {stopId, L"Stop"}, {undoId, L"Undo"}, {tempoApplyId, L"Set"}, {commandId, L"Commands"},
+         {playId, L"Play"}, {stopId, L"Stop"}, {undoId, L"Undo"}, {deviceId, L"Devices"}, {tempoApplyId, L"Set"}, {commandId, L"Commands"},
          {noteId, L"Add note"}, {updateNoteId, L"Update"}, {deleteNoteId, L"Delete"}, {moveId, L"Move audio clip"}, {removeId, L"Remove track..."},
          {importId, L"Import WAV..."}, {placeId, L"Place audio source"}, {recoverId, L"Recover take..."},
          {addTrackId, L"Add instrument"}, {volumeApplyId, L"Apply"}}) {
@@ -781,7 +832,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 const auto ticks = static_cast<unsigned>(std::lround(frame * project.tempo / (60. * sampleRate))) * ticksPerBeat;
                 playFrom = frameAtTick(ticks, project.tempo);
                 if (playFrom >= totalFrames) playFrom = frameAtTick(ticks - ticksPerBeat, project.tempo);
-                if (audio.state() == Output::State::playing) audio.play(renderedSession(), playFrom);
+                if (audio.state() == Output::State::playing) audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
                 InvalidateRect(window, &panel, FALSE);
             } else if (x >= panel.left && x < panel.right && y >= 0) {
                 const int index = y / arrangementRowHeight(panel);
@@ -862,6 +913,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
                                          nullptr, nullptr, instance, nullptr);
     if (!window) return 1;
     if (std::wstring_view(GetCommandLineW()).ends_with(L" --workspace-check")) {
+        if (!field(window, deviceId) ||
+            resolveWindowsAudioEndpoint(AudioDirection::input, {}) != WAVE_MAPPER ||
+            resolveWindowsAudioEndpoint(AudioDirection::output, {}) != WAVE_MAPPER) return 1;
+        try {
+            resolveWindowsAudioEndpoint(AudioDirection::input, WindowsAudioEndpoint{L"Sonoravell missing endpoint fixture", 0, 0, 0});
+            return 1;
+        } catch (const std::runtime_error&) {
+            // A stale explicit selection must not silently open the default input.
+        }
         execute(window, newId);
         execute(window, addTrackId);
         SetDlgItemInt(window, beatId, 2, FALSE);

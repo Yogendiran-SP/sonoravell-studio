@@ -30,12 +30,12 @@ private:
 
 class InputDevice {
 public:
-    void open() {
+    void open(unsigned deviceId) {
         WAVEFORMATEX format{WAVE_FORMAT_PCM, 1, sampleRate, sampleRate * 2, 2, 16, 0};
-        if (waveInOpen(&handle, WAVE_MAPPER, &format, reinterpret_cast<DWORD_PTR>(ready.get()), 0,
+        if (waveInOpen(&handle, deviceId, &format, reinterpret_cast<DWORD_PTR>(ready.get()), 0,
                        CALLBACK_EVENT) != MMSYSERR_NOERROR) {
             handle = nullptr;
-            throw std::runtime_error("Could not open the default Windows input at 48 kHz mono.");
+            throw std::runtime_error("Could not open the selected Windows input at 48 kHz mono.");
         }
         for (auto& block : blocks) {
             block.header.lpData = reinterpret_cast<LPSTR>(block.samples.data());
@@ -116,8 +116,8 @@ struct Capture::Run {
         if (input && (!input->reset() || !input->close())) (void)input.release();
     }
 
-    void begin(unsigned frames) {
-        input->open();
+    void begin(unsigned frames, unsigned deviceId) {
+        input->open(deviceId);
         queueAvailable(frames);
         if (interrupted.load() || waveInStart(input->handle) != MMSYSERR_NOERROR) {
             throw std::runtime_error("Windows could not start recording.");
@@ -239,7 +239,7 @@ Capture::~Capture() = default;
 bool Capture::active() const { return static_cast<bool>(run); }
 bool Capture::finished() const { return run && run->writerDone.load() && run->inputDone.load(); }
 
-void Capture::start(unsigned frames, unsigned tick) {
+void Capture::start(unsigned frames, unsigned tick, unsigned deviceId) {
     if (active() || !frames || frames > maxAssetSamples / channelCount) {
         throw std::runtime_error("There is no capacity for another recording.");
     }
@@ -248,7 +248,7 @@ void Capture::start(unsigned frames, unsigned tick) {
     const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
     const auto name = "Take-" + std::to_string(stamp) + "-" + std::to_string(std::random_device{}()) + takeExtension;
     auto next = std::make_unique<Run>(directory / name, tick);
-    next->begin(frames);
+    next->begin(frames, deviceId);
     run = std::move(next);
 }
 

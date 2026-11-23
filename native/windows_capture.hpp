@@ -20,7 +20,7 @@ public:
 
     bool active() const;
     bool finished() const;
-    void start(unsigned frames, unsigned tick);
+    void start(unsigned frames, unsigned tick, unsigned deviceId);
     void requestStop();
     CaptureResult finish();
 
