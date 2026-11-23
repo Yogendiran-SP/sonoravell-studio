@@ -20,6 +20,9 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --config Release
       - run: ctest --test-dir build -C Release --output-on-failure
+      - name: Report mixer timing
+        if: runner.os == 'Linux'
+        run: ./build/sonoravell-render --benchmark
       - name: Stage Windows application
         if: runner.os == 'Windows'
         run: cmake --install build --config Release --prefix package

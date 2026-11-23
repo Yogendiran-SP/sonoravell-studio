@@ -1,8 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <span>
 #include <vector>
 
 namespace sonoravell {
@@ -25,6 +27,31 @@ using Samples = std::vector<std::int16_t>;
 
 // The After Hours score from Sonoravell Studio 1.0.2.
 std::vector<Note> afterHours();
-Samples render(const TrackMutes& muted);
+
+class DemoAudio {
+public:
+    DemoAudio();
+    Samples render(const TrackMutes& muted) const;
+
+private:
+    friend class PlaybackMixer;
+    std::array<std::vector<float>, trackNames.size()> tracks;
+};
+
+class PlaybackMixer {
+public:
+    static constexpr unsigned muteRampFrames = sampleRate / 200;
+
+    PlaybackMixer(const DemoAudio& audio, const TrackMutes& initialMutes);
+    // Mix complete interleaved frames from the current position. No allocation.
+    std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
+    bool finished() const noexcept;
+
+private:
+    const DemoAudio& audio;
+    std::size_t position = 0;
+    std::array<unsigned, trackNames.size()> gains{};
+};
+
 void writeWave(std::ostream& output, const Samples& samples);
 }

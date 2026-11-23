@@ -6,53 +6,145 @@
 
 #include "session.hpp"
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
-#include <utility>
+#include <stop_token>
+#include <thread>
 
 namespace {
 using namespace sonoravell;
 constexpr int playId = 100, stopId = 101, exportId = 102, muteId = 200;
 constexpr UINT_PTR playbackTimer = 1;
 
-class Output {
+const DemoAudio& demoAudio() {
+    static const DemoAudio demo;
+    return demo;
+}
+
+class WaveStream {
+    static constexpr std::size_t framesPerBuffer = sampleRate / 50;
+    struct Buffer {
+        std::array<std::int16_t, framesPerBuffer * channelCount> samples{};
+        WAVEHDR header{};
+    };
+    std::array<Buffer, 2> buffers;
+    HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     HWAVEOUT device = nullptr;
-    WAVEHDR header{};
-    Samples samples;
 
 public:
-    bool active() const { return device != nullptr; }
-    bool finished() const { return active() && (header.dwFlags & WHDR_DONE) != 0; }
-
-    bool stop() {
-        if (!active()) return true;
-        if (waveOutReset(device) != MMSYSERR_NOERROR) return false;
-        if ((header.dwFlags & WHDR_PREPARED) &&
-            waveOutUnprepareHeader(device, &header, sizeof(header)) != MMSYSERR_NOERROR) return false;
-        if (waveOutClose(device) != MMSYSERR_NOERROR) return false;
-        device = nullptr;
-        header = {};
-        samples.clear();
-        return true;
+    ~WaveStream() {
+        if (device) {
+            waveOutReset(device);
+            for (auto& buffer : buffers) {
+                if (buffer.header.dwFlags & WHDR_PREPARED) {
+                    waveOutUnprepareHeader(device, &buffer.header, sizeof(buffer.header));
+                }
+            }
+            waveOutClose(device);
+        }
+        if (ready) CloseHandle(ready);
     }
 
-    bool play(Samples next) {
-        if (!stop()) return false;
+    bool run(PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask, std::stop_token stop) {
+        if (!ready) return false;
+        std::stop_callback wakeOnStop(stop, [this] { SetEvent(ready); });
+        if (stop.stop_requested()) return true;
         WAVEFORMATEX format{WAVE_FORMAT_PCM, channelCount, sampleRate, sampleRate * channelCount * 2,
                             channelCount * 2, 16, 0};
-        if (waveOutOpen(&device, WAVE_MAPPER, &format, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) {
+        if (waveOutOpen(&device, WAVE_MAPPER, &format, reinterpret_cast<DWORD_PTR>(ready), 0,
+                        CALLBACK_EVENT) != MMSYSERR_NOERROR) {
             device = nullptr;
             return false;
         }
-        samples = std::move(next);
-        header.lpData = reinterpret_cast<LPSTR>(samples.data());
-        header.dwBufferLength = static_cast<DWORD>(samples.size() * sizeof(Samples::value_type));
-        if (waveOutPrepareHeader(device, &header, sizeof(header)) == MMSYSERR_NOERROR &&
-            waveOutWrite(device, &header, sizeof(header)) == MMSYSERR_NOERROR) return true;
-        stop();
-        return false;
+        if (waveOutPause(device) != MMSYSERR_NOERROR) return false;
+        std::size_t pending = 0;
+        for (auto& buffer : buffers) {
+            if (mixer.finished()) break;
+            buffer.header.lpData = reinterpret_cast<LPSTR>(buffer.samples.data());
+            buffer.header.dwBufferLength = static_cast<DWORD>(sizeof(buffer.samples));
+            if (waveOutPrepareHeader(device, &buffer.header, sizeof(buffer.header)) != MMSYSERR_NOERROR ||
+                !queue(buffer, mixer, muteMask)) return false;
+            ++pending;
+        }
+        if (!pending || stop.stop_requested()) return true;
+        if (waveOutRestart(device) != MMSYSERR_NOERROR) return false;
+
+        std::size_t oldest = 0;
+        while (pending && !stop.stop_requested()) {
+            auto& buffer = buffers[oldest];
+            if (!(buffer.header.dwFlags & WHDR_DONE)) {
+                if (WaitForSingleObject(ready, INFINITE) != WAIT_OBJECT_0) return false;
+                continue;
+            }
+            // Recycle in playback order even when several buffers completed before we woke.
+            oldest = (oldest + 1) % buffers.size();
+            --pending;
+            if (!mixer.finished()) {
+                if (!queue(buffer, mixer, muteMask)) return false;
+                ++pending;
+            }
+        }
+        return true;
     }
+
+    static TrackMutes decodeMutes(unsigned mask) {
+        TrackMutes muted{};
+        for (std::size_t track = 0; track < muted.size(); ++track) {
+            muted[track] = (mask & (1u << track)) != 0;
+        }
+        return muted;
+    }
+
+private:
+    bool queue(Buffer& buffer, PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask) {
+        const auto count = mixer.read(buffer.samples, decodeMutes(muteMask.load()));
+        buffer.header.dwBufferLength = static_cast<DWORD>(count * sizeof(buffer.samples.front()));
+        return waveOutWrite(device, &buffer.header, sizeof(buffer.header)) == MMSYSERR_NOERROR;
+    }
+};
+
+class Output {
+public:
+    enum class State { stopped, completed, failed };
+
+    State state() const { return playbackState.load(); }
+
+    void stop() {
+        if (worker.joinable()) {
+            worker.request_stop();
+            worker.join();
+        }
+        playbackState.store(State::stopped);
+    }
+
+    void setMutes(const TrackMutes& muted) {
+        unsigned mask = 0;
+        for (std::size_t track = 0; track < muted.size(); ++track) {
+            if (muted[track]) mask |= 1u << track;
+        }
+        muteMask.store(mask);
+    }
+
+    void play() {
+        stop();
+        const auto* demo = &demoAudio();
+        worker = std::jthread([this, demo](std::stop_token stopToken) {
+            PlaybackMixer mixer(*demo, WaveStream::decodeMutes(muteMask.load()));
+            bool ok;
+            {
+                WaveStream stream;
+                ok = stream.run(mixer, muteMask, stopToken);
+            }
+            playbackState.store(ok ? State::completed : State::failed);
+        });
+    }
+
+private:
+    std::atomic<unsigned> muteMask{0};
+    std::atomic<State> playbackState{State::stopped};
+    std::jthread worker;
 };
 
 Output audio;
@@ -84,7 +176,7 @@ void exportWave(HWND window) {
         if (CommDlgExtendedError()) status(L"Could not open the save dialog.");
         return;
     }
-    const auto samples = render(muted);
+    const auto samples = demoAudio().render(muted);
     std::ofstream file(std::filesystem::path(path), std::ios::binary);
     writeWave(file, samples);
     file.close();
@@ -104,40 +196,42 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             control(window, L"STATIC", trackNames[track], 0, 20, y, 165, 24);
             control(window, L"BUTTON", L"Mute", WS_TABSTOP | BS_AUTOCHECKBOX, 190, y, 70, 24, muteId + track);
         }
-        statusLabel = control(window, L"STATIC", L"Ready. Mutes apply to the next playback or export.", 0, 20, 256, 460, 40);
+        statusLabel = control(window, L"STATIC", L"Ready. Mute tracks during playback or before export.", 0, 20, 256, 460, 40);
         return 0;
     case WM_COMMAND:
         try {
             const int id = LOWORD(wParam);
             if (id == playId) {
-                if (!audio.play(render(muted))) status(L"Could not start the default Windows audio output.");
-                else {
-                    SetTimer(window, playbackTimer, 100, nullptr);
-                    status(L"Playing After Hours.");
-                }
+                audio.play();
+                SetTimer(window, playbackTimer, 50, nullptr);
+                status(L"Playing After Hours.");
             } else if (id == stopId) {
                 KillTimer(window, playbackTimer);
-                status(audio.stop() ? L"Stopped." : L"Could not stop the audio output.");
+                audio.stop();
+                status(L"Stopped.");
             } else if (id == exportId) {
                 exportWave(window);
             } else if (id >= muteId && id < muteId + static_cast<int>(muted.size())) {
                 muted[id - muteId] = IsDlgButtonChecked(window, id) == BST_CHECKED;
+                audio.setMutes(muted);
             }
         } catch (const std::exception&) {
             status(L"Could not render or write the audio. Check the destination and retry.");
         }
         return 0;
     case WM_TIMER:
-        if (wParam == playbackTimer && audio.finished()) {
-            KillTimer(window, playbackTimer);
-            status(audio.stop() ? L"Playback complete." : L"Could not release the audio output.");
+        if (wParam == playbackTimer) {
+            const auto state = audio.state();
+            if (state == Output::State::completed || state == Output::State::failed) {
+                KillTimer(window, playbackTimer);
+                audio.stop();
+                status(state == Output::State::completed ? L"Playback complete."
+                                                        : L"Windows audio output failed.");
+            }
         }
         return 0;
     case WM_CLOSE:
-        if (!audio.stop()) {
-            status(L"Could not release the audio output. Try Stop again.");
-            return 0;
-        }
+        audio.stop();
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
