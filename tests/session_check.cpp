@@ -22,18 +22,51 @@ int main() {
         return note.startBeat >= 0 && note.startBeat + note.lengthBeats <= demoBars * 4;
     }), "Demo note extends beyond the arrangement");
 
-    const auto mix = render({});
+    const DemoAudio demo;
+    const auto mix = demo.render({});
     check(mix.size() == 1772308, "Unexpected demo playback length");
-    check(mix == render({}), "Render must repeat within the same build");
+    check(mix == demo.render({}), "Render must repeat within the same build");
     check(std::ranges::any_of(mix, [](auto sample) { return sample != 0; }), "Mix is silent");
-    const auto silence = render({true, true, true, true});
+    const auto silence = demo.render({true, true, true, true});
     check(silence.size() == mix.size() && std::ranges::all_of(silence, [](auto sample) { return sample == 0; }),
           "Muting all tracks must preserve length and produce silence");
     for (unsigned track = 0; track < trackNames.size(); ++track) {
         TrackMutes mutes{};
         mutes[track] = true;
-        check(render(mutes) != mix, "Every track must contribute to the mix");
+        check(demo.render(mutes) != mix, "Every track must contribute to the mix");
     }
+
+    constexpr std::size_t blockFrames = 512;
+    constexpr std::size_t blockSamples = blockFrames * channelCount;
+    constexpr std::size_t rampSamples = PlaybackMixer::muteRampFrames * channelCount;
+    const TrackMutes keysMuted{true, false, false, false};
+    const auto withoutKeys = demo.render(keysMuted);
+    Samples block(blockSamples);
+    PlaybackMixer playback(demo, {});
+    check(playback.read(block, {}) == blockSamples && std::ranges::equal(block, std::span(mix).first(blockSamples)),
+          "Playback starts at the original mix");
+    check(playback.read(block, keysMuted) == blockSamples, "Mute request continues playback");
+    check(std::ranges::equal(std::span(block).first(channelCount),
+                            std::span(mix).subspan(blockSamples, channelCount)),
+          "Mute fade starts at the current gain");
+    check(std::ranges::equal(std::span(block).subspan(rampSamples),
+                            std::span(withoutKeys).subspan(blockSamples + rampSamples, blockSamples - rampSamples)),
+          "Muted track drops out after the fade without moving the playhead");
+    check(playback.read(block, {}) == blockSamples, "Unmute request continues playback");
+    check(std::ranges::equal(std::span(block).first(channelCount),
+                            std::span(withoutKeys).subspan(2 * blockSamples, channelCount)),
+          "Unmute fade starts at the current gain");
+    check(std::ranges::equal(std::span(block).subspan(rampSamples),
+                            std::span(mix).subspan(2 * blockSamples + rampSamples, blockSamples - rampSamples)),
+          "Unmuting restores the original mix at the current playhead");
+    std::size_t consumed = 3 * blockSamples;
+    while (!playback.finished()) {
+        const auto count = playback.read(block, {});
+        check(count > 0 && std::ranges::equal(std::span(block).first(count), std::span(mix).subspan(consumed, count)),
+              "Buffer order and final partial buffer preserve the original mix");
+        consumed += count;
+    }
+    check(consumed == mix.size() && playback.read(block, {}) == 0, "Playback ends exactly once");
 
     std::ostringstream output;
     writeWave(output, mix);

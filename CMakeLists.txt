@@ -5,10 +5,13 @@ add_library(sonoravell_engine native/session.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
+add_executable(sonoravell-render native/render_cli.cpp)
+target_link_libraries(sonoravell-render PRIVATE sonoravell_engine)
+
 if(WIN32)
   add_executable(SonoravellStudio WIN32 native/windows.cpp)
   target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32)
-  install(TARGETS SonoravellStudio RUNTIME DESTINATION .)
+  install(TARGETS SonoravellStudio sonoravell-render RUNTIME DESTINATION .)
   install(FILES README.md LICENSE DESTINATION .)
 endif()
 

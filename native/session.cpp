@@ -33,13 +33,14 @@ std::vector<Note> afterHours() {
     return notes;
 }
 
-Samples render(const TrackMutes& muted) {
+DemoAudio::DemoAudio() {
     constexpr double framesPerBeat = 60 * sampleRate / demoTempo;
     constexpr double tau = 2 * std::numbers::pi;
     constexpr double pan[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}};
-    std::vector<double> mix(std::lround(demoBars * 4 * framesPerBeat) * channelCount);
+    const auto sampleCount = std::lround(demoBars * 4 * framesPerBeat) * channelCount;
+    for (auto& track : tracks) track.resize(sampleCount);
     for (const Note& note : afterHours()) {
-        if (muted[note.track]) continue;
+        auto& track = tracks[note.track];
         const auto start = std::lround(note.startBeat * framesPerBeat);
         const auto length = std::lround(note.lengthBeats * framesPerBeat);
         const double frequency = 440 * std::exp2((note.pitch - 69) / 12.0);
@@ -59,16 +60,49 @@ Samples render(const TrackMutes& muted) {
                 voice = (.8 * voice + .2 * std::sin(phase * 2)) * std::exp(-12 * time);
             }
             for (unsigned channel = 0; channel < channelCount; ++channel) {
-                mix[(start + frame) * channelCount + channel] +=
-                    .14 * voice * note.velocity * envelope * pan[note.track][channel];
+                track[(start + frame) * channelCount + channel] +=
+                    static_cast<float>(.14 * voice * note.velocity * envelope * pan[note.track][channel]);
             }
         }
     }
-    Samples samples(mix.size());
-    std::transform(mix.begin(), mix.end(), samples.begin(), [](double sample) {
-        return static_cast<std::int16_t>(std::lround(std::clamp(sample, -1., 1.) * 32767));
-    });
+}
+
+Samples DemoAudio::render(const TrackMutes& muted) const {
+    Samples samples(tracks.front().size());
+    PlaybackMixer(*this, muted).read(samples, muted);
     return samples;
+}
+
+PlaybackMixer::PlaybackMixer(const DemoAudio& audio, const TrackMutes& initialMutes) : audio(audio) {
+    for (std::size_t track = 0; track < gains.size(); ++track) {
+        gains[track] = initialMutes[track] ? 0 : muteRampFrames;
+    }
+}
+
+std::size_t PlaybackMixer::read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept {
+    const auto count = std::min(output.size() / channelCount * channelCount,
+                                audio.tracks.front().size() - position);
+    for (std::size_t offset = 0; offset < count; offset += channelCount) {
+        double frame[channelCount]{};
+        for (std::size_t track = 0; track < gains.size(); ++track) {
+            const double gain = static_cast<double>(gains[track]) / muteRampFrames;
+            for (unsigned channel = 0; channel < channelCount; ++channel) {
+                frame[channel] += audio.tracks[track][position + offset + channel] * gain;
+            }
+            if (muted[track] && gains[track] > 0) --gains[track];
+            if (!muted[track] && gains[track] < muteRampFrames) ++gains[track];
+        }
+        for (unsigned channel = 0; channel < channelCount; ++channel) {
+            output[offset + channel] = static_cast<std::int16_t>(
+                std::lround(std::clamp(frame[channel], -1., 1.) * 32767));
+        }
+    }
+    position += count;
+    return count;
+}
+
+bool PlaybackMixer::finished() const noexcept {
+    return position == audio.tracks.front().size();
 }
 
 void writeWave(std::ostream& output, const Samples& samples) {
