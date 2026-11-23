@@ -20,7 +20,7 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 
 **Save as** writes a `.sonora` Session with embedded audio, MIDI, tempo, and track
 controls. **Open** restores it. **Export** writes 48 kHz, 16-bit stereo WAV. Import
-supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. The native Session
+supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. Use **Restore Session checkpoint…** in command search to restore an idle autosave with embedded audio. The native Session
 format has its own version and extension. Older browser project files require
 a separate migration path.
 
@@ -56,5 +56,5 @@ Recording currently creates one mono take from the Windows default input at
 a time and stops playback first. A committed Session uses staged file
 replacement. **Browser → Recover take…** restores committed audio after an
 interruption. See [recording recovery](docs/RECORDING_RECOVERY.md). The G0 real-device latency/dropout benchmark and the
-G1 multitrack capture, external MIDI, project recovery, and configurable
+G1 multitrack capture, external MIDI, hardware recovery validation, and configurable
 workspace acceptance tests remain open.

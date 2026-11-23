@@ -7,6 +7,7 @@
 #include <mmsystem.h>
 
 #include "session.hpp"
+#include "session_autosave.hpp"
 #include "windows_audio.hpp"
 #include "windows_capture.hpp"
 
@@ -33,7 +34,7 @@ enum ControlId {
     tempoApplyId, commandId, focusId, inspectorId, trackListId, trackLabelId, beatLabelId, beatId,
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
-    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId,
+    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -43,6 +44,9 @@ Output audio;
 Capture capture;
 std::function<void()> undo;
 bool dirty = false;
+bool autosavePending = false;
+ULONGLONG autosaveAfter = 0;
+SessionAutosave autosave;
 bool focused = false;
 bool inspectorShown = true, browserShown = true, mixerShown = true;
 unsigned playFrom = 0;
@@ -359,6 +363,30 @@ std::uint32_t newIdFor(const Items& items) {
     throw std::runtime_error("No free track or audio source ID.");
 }
 
+void markDirty() {
+    dirty = true;
+    autosavePending = true;
+    autosaveAfter = GetTickCount64() + 1200;
+}
+
+std::filesystem::path sessionRecoveryDirectory() {
+    return takeRecoveryDirectory() / L"Sessions";
+}
+
+void checkpointIfIdle(HWND window) {
+    if (!autosavePending || capture.active() || audio.state() != Output::State::stopped ||
+        GetTickCount64() < autosaveAfter) return;
+    autosavePending = false;
+    try {
+        autosave.checkpoint(sessionRecoveryDirectory(), project);
+        status(window, L"Recovery checkpoint saved. Use Save As to update your Session file.");
+    } catch (const std::exception&) {
+        status(window, L"Session autosave failed. The previous checkpoint is intact. Check storage or use Save As.");
+        autosavePending = true;
+        autosaveAfter = GetTickCount64() + 15000;
+    }
+}
+
 void edit(HWND window, std::function<void()> reverse, int index, bool newAudio = true) {
     try {
         validateProject(project);
@@ -375,7 +403,7 @@ void edit(HWND window, std::function<void()> reverse, int index, bool newAudio =
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
     undo = std::move(reverse);
-    dirty = true;
+    markDirty();
     refresh(window, index);
 }
 
@@ -386,7 +414,7 @@ void revert(HWND window) {
     prepared.reset();
     undo();
     undo = {};
-    dirty = true;
+    markDirty();
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
@@ -403,6 +431,8 @@ void installProject(HWND window, Project next) {
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMutes(trackMutes(project));
     dirty = false;
+    autosavePending = false;
+    autosave.startSession();
     undo = {};
     refresh(window, 0);
 }
@@ -485,7 +515,7 @@ void showCommands(HWND window) {
     };
     const auto query = lowercase(queryText);
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
-         {openId, L"Open Session..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
+         {openId, L"Open Session..."}, {restoreSessionId, L"Restore Session checkpoint..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
          {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
          {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
          {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
@@ -547,11 +577,22 @@ void execute(HWND window, int id) {
             installProject(window, openProject(path));
             status(window, L"Opened Session.");
         }
+    } else if (id == restoreSessionId) {
+        const auto directory = sessionRecoveryDirectory();
+        std::filesystem::create_directories(directory);
+        const auto path = selectFile(window, false, sessionFilter, L"sonora", directory.c_str());
+        if (!path.empty() && discardEdits(window)) {
+            installProject(window, openProject(path));
+            markDirty();
+            refresh(window, 0);
+            status(window, L"Restored checkpoint as a working Session. Use Save As to keep it.");
+        }
     } else if (id == saveId) {
         const auto path = selectFile(window, true, sessionFilter, L"sonora");
         if (!path.empty()) {
             saveProject(path, project);
             dirty = false;
+            autosavePending = false;
             refresh(window, selectedTrack(window));
             status(window, L"Saved Session with embedded audio.");
         }
@@ -769,6 +810,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         case WM_TIMER: {
             if (wParam != transportTimer) return 0;
             if (capture.finished()) finishTake(window);
+            checkpointIfIdle(window);
             const auto state = audio.state();
             if (state == Output::State::completed || state == Output::State::failed) {
                 audio.stop();
