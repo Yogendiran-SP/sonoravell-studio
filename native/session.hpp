@@ -1,5 +1,7 @@
 #pragma once
 
+#include "project.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -8,8 +10,6 @@
 #include <vector>
 
 namespace sonoravell {
-inline constexpr unsigned sampleRate = 48000;
-inline constexpr unsigned channelCount = 2;
 inline constexpr double demoTempo = 104;
 inline constexpr unsigned demoBars = 8;
 
@@ -22,35 +22,36 @@ struct Note {
 };
 
 inline constexpr std::array trackNames{L"Electric Keys", L"Sub Bass", L"Drum Machine", L"Glass Plucks"};
-using TrackMutes = std::array<bool, trackNames.size()>;
-using Samples = std::vector<std::int16_t>;
+using TrackMutes = std::array<bool, maxTracks>;
+TrackMutes trackMutes(const Project& project);
 
 // The After Hours score from Sonoravell Studio 1.0.2.
 std::vector<Note> afterHours();
 
-class DemoAudio {
+class SessionAudio {
 public:
-    DemoAudio();
+    explicit SessionAudio(const Project& project);
     Samples render(const TrackMutes& muted) const;
 
 private:
     friend class PlaybackMixer;
-    std::array<std::vector<float>, trackNames.size()> tracks;
+    std::vector<std::vector<float>> tracks;
+    std::size_t sampleCount;
 };
 
 class PlaybackMixer {
 public:
     static constexpr unsigned muteRampFrames = sampleRate / 200;
 
-    PlaybackMixer(const DemoAudio& audio, const TrackMutes& initialMutes);
+    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes);
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
     bool finished() const noexcept;
 
 private:
-    const DemoAudio& audio;
+    const SessionAudio& audio;
     std::size_t position = 0;
-    std::array<unsigned, trackNames.size()> gains{};
+    std::array<unsigned, maxTracks> gains{};
 };
 
 void writeWave(std::ostream& output, const Samples& samples);

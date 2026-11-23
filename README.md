@@ -1,17 +1,31 @@
 # Sonoravell Studio
 
 Sonoravell Studio is a native desktop DAW in development under the [MIT License](LICENSE).
-The first Windows build plays the four-track **After Hours** demo from Sonoravell Studio
-1.0.2 and exports the active mix to stereo WAV. It uses a Win32 window and the Windows
-default audio output. The demo keeps the original score and tempo, with native
-synthesis and a basic stereo mix.
+The Windows application opens the four-track **After Hours** demo from the original
+Sonoravell prototype. It can also start an empty Session and work offline.
 
-## Run the Windows build
+## Run on Windows
 
-Download **Sonoravell-Studio-Windows** from a successful Native DAW checks run on the
-repository's Actions page. Extract it and open `SonoravellStudio.exe`. Use **Play**
-and **Stop**. Track mutes also work during playback and are applied to WAV exports. The WAV export is 48 kHz,
-16-bit stereo.
+Download **Sonoravell-Studio-Windows** from a successful Native DAW checks run on
+GitHub Actions, extract it, and open `SonoravellStudio.exe`.
+
+| Workspace | What you can do |
+| --- | --- |
+| Transport | Record from the default Windows input, play, stop, change tempo, and undo the last edit. Stop finalizes a recording as a new audio track. |
+| Arrange | See bars, MIDI notes, audio clips, and the playback cursor. Click a track lane to select it. |
+| Inspector | Set a start beat, add a one-beat MIDI note by pitch, move the first audio clip, or remove the selected track. |
+| Browser | Import a PCM WAV, create an instrument track, or place an existing Audio Pool source on another track. |
+| Mixer | Set the selected track's level and mute or unmute it during playback. |
+| Focus | Expand Arrange and keep transport and file controls visible. |
+
+**Save as** writes a `.sonora` Session with embedded audio, MIDI, tempo, and track
+controls. **Open** restores it. **Export** writes 48 kHz, 16-bit stereo WAV. Import
+supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. The native Session
+format has its own version and extension. Older browser project files require
+a separate migration path.
+
+The command menu is available with Ctrl+F. Ctrl+O opens a Session,
+Ctrl+Shift+S opens Save As, and Ctrl+Z undoes the last edit.
 
 ## Build and test
 
@@ -24,21 +38,22 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The Windows build produces the desktop GUI. Linux and macOS CI build and test the
-shared render engine.
+The Windows CI build also checks the native workspace commands. Linux and macOS
+CI build and test the shared mixer, Session storage, and audio import code.
 
-## Headless render and timing
+### Headless render and timing
 
-Run `sonoravell-render "After Hours.wav"` to export the demo without the GUI.
-`sonoravell-render --benchmark` measures the C++ mixer at 32, 64, and 128 frames.
-It reports the 95th percentile, worst observed buffer mix time, and buffer duration.
-Hardware I/O and track preparation are outside the measurement.
+Run `sonoravell-render "After Hours.wav"` for the demo or
+`sonoravell-render input.sonora mix.wav` to export a saved Session.
+`sonoravell-render --benchmark` measures mixer processing at 32, 64, and 128
+frames, excluding device I/O and track preparation.
 
 ## Roadmap status
 
-This is a native rendering and playback milestone. It prepares the individual
-tracks once, then mixes short buffers for Windows waveform audio output. Mute
-changes reach the next available buffer and use a short gain ramp. The G0 real-time callback
-benchmark, physical interface tests, recording, editing, project import and
-saving are open. The v1.0.2 source remains available in the repository history
-for porting project formats and production workflows.
+This build covers the initial editable local Session slice from the roadmap.
+Recording currently creates one mono take from the Windows default input at
+a time and stops playback first. A committed Session uses staged file
+replacement. An in-progress take lives in memory until Stop, then in the
+Session until Save As. The G0 real-device latency/dropout benchmark and the
+G1 multitrack capture, external MIDI, project recovery, and configurable
+workspace acceptance tests remain open.

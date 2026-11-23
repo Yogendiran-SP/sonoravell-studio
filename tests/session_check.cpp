@@ -22,7 +22,7 @@ int main() {
         return note.startBeat >= 0 && note.startBeat + note.lengthBeats <= demoBars * 4;
     }), "Demo note extends beyond the arrangement");
 
-    const DemoAudio demo;
+    const SessionAudio demo(afterHoursProject());
     const auto mix = demo.render({});
     check(mix.size() == 1772308, "Unexpected demo playback length");
     check(mix == demo.render({}), "Render must repeat within the same build");
