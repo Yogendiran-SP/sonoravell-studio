@@ -38,13 +38,13 @@ public:
     }
 
     bool run(PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask,
-             std::atomic<unsigned>& played, std::stop_token stop) {
+             std::atomic<unsigned>& played, unsigned deviceId, std::stop_token stop) {
         if (!ready) return false;
         std::stop_callback wakeOnStop(stop, [this] { SetEvent(ready); });
         if (stop.stop_requested()) return true;
         WAVEFORMATEX format{WAVE_FORMAT_PCM, channelCount, sampleRate, sampleRate * channelCount * 2,
                             channelCount * 2, 16, 0};
-        if (waveOutOpen(&device, WAVE_MAPPER, &format, reinterpret_cast<DWORD_PTR>(ready), 0,
+        if (waveOutOpen(&device, deviceId, &format, reinterpret_cast<DWORD_PTR>(ready), 0,
                         CALLBACK_EVENT) != MMSYSERR_NOERROR) {
             device = nullptr;
             return false;
@@ -126,17 +126,17 @@ public:
         muteMask.store(mask);
     }
 
-    void play(const SessionAudio& session, unsigned startFrame) {
+    void play(const SessionAudio& session, unsigned startFrame, unsigned deviceId) {
         stop();
         played.store(0);
         playbackState.store(State::playing);
         try {
-            worker = std::jthread([this, &session, startFrame](std::stop_token stopToken) {
+            worker = std::jthread([this, &session, startFrame, deviceId](std::stop_token stopToken) {
                 PlaybackMixer mixer(session, WaveStream::decodeMutes(muteMask.load()), startFrame);
                 bool ok;
                 {
                     WaveStream stream;
-                    ok = stream.run(mixer, muteMask, played, stopToken);
+                    ok = stream.run(mixer, muteMask, played, deviceId, stopToken);
                 }
                 playbackState.store(ok ? State::completed : State::failed);
             });
