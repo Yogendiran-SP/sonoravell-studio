@@ -206,19 +206,16 @@ Object.assign(SW, (() => {
         sessions.set(sessionId,snapshot);sessionChanged();
       }
     }
-    function activateSession(snapshot,id){
+    function activateSession(snapshot,id,save=true){
+      api.flushSession();
       retainSession();
       sessionId=id;
       api.setSession(snapshot);
       switchPage('session');
       sessionChanged();
-      writeSession();
+      if(save)api.saveSessionLocally();
+      if(snapshot.recovered)status('Recovered previous local revision');
       draw();
-    }
-    function writeSession(){
-      const snapshot=api.session();
-      const data=new Map(Object.keys(snapshot.project.assets).map(id=>[id,snapshot.media.get(id)?.bytes]));
-      return api.put(storedKey(sessionId),{snapshot:clone(snapshot.project),data}).catch(()=>{});
     }
     async function loadAudio(raw,durations,videos=new Map()){
       const media=new Map();
@@ -242,18 +239,18 @@ Object.assign(SW, (() => {
       pending=true;
       let next;
       try{
-        const data=await api.get(storedKey(id));
-        if(!data)throw Error('This document has no browser copy. Open its portable file.');
         if(row.kind==='session'){
-          const p=SW.validateProject(data.snapshot);
-          next={project:p,media:await loadAudio(data.data,new Map(Object.entries(p.assets).map(([key,value])=>[key,value.duration])))};
+          next=await api.loadSession(id);
+          next.accept();
         }else{
+          const data=await api.get(storedKey(id));
+          if(!data)throw Error('This document has no browser copy. Open its portable file.');
           const {document:doc,files}=data;
           SW.validateWorkspaceDocument(doc);
           next={doc,media:await loadAudio(files,SW.workspaceAssets(doc),SW.workspaceVideos(doc))};
         }
       }finally{pending=false;}
-      if(next.project)activateSession(next,id);
+      if(next.project)activateSession(next,id,!next.recovered);
       else{install(next.doc,next.media);switchPage(next.doc.kind);position=0;stopPlayback();}
     }
     async function openPortable(file){
@@ -899,7 +896,7 @@ Object.assign(SW, (() => {
       if(id&&available(id)){api.command(id);event.preventDefault();}
       return true;
     }
-    return {bind,draw,switchPage,commands,available,keys,openPortable,writeSession,sessionChanged,midi,releaseNote,
+    return {bind,draw,switchPage,commands,available,keys,openPortable,sessionChanged,midi,releaseNote,
       dirty:()=>[...records.values()].some(row=>row.dirty)||[...sessions].some(([id,row])=>id!==sessionId&&row.dirty),
       page:()=>page,sessionId:()=>sessionId,
       restoreSessionId:id=>{if(typeof id==='string'&&/^[\w-]{1,100}$/.test(id))sessionId=id;}};

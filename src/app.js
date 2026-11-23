@@ -80,30 +80,50 @@
       if(!globalThis.indexedDB){reject(Error('Browser storage is unavailable.'));return;}
       const request=indexedDB.open('soundweave-studio',1);
       request.onupgradeneeded=()=>request.result.createObjectStore('workspace');
-      request.onsuccess=()=>resolve(request.result);
+      request.onsuccess=()=>{
+        const db=request.result;
+        db.onversionchange=()=>{db.close();dbPromise=undefined;};
+        resolve(db);
+      };
       request.onerror=()=>reject(request.error);
-    });
+    }).catch(error=>{dbPromise=undefined;throw error;});
     return dbPromise;
   }
-  async function saveLocal(){
-    const db=await database(), version=revision, snapshot=clone(p);
-    const data=new Map(Object.keys(snapshot.assets).filter(id=>media.has(id)).map(id=>[id,media.get(id).bytes]));
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction('workspace','readwrite');
-      const store=tx.objectStore('workspace');
-      store.put({snapshot,data,id:workspacePages.sessionId()},'session');
-      store.put({snapshot,data},'document:'+workspacePages.sessionId());
-      tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(tx.error);
+  const sessionRecovery=SW.createSessionRecovery(database);
+  async function loadSession(id){
+    return sessionRecovery.load(id,async (raw,durations)=>{
+      const loaded=new Map();
+      if(!raw.size)return loaded;
+      const context=ctx||(ctx=SW.audioContext());
+      for(const [key,bytes] of raw){
+        const buffer=await context.decodeAudioData(bytes.slice(0));
+        if(Math.abs(durations.get(key)-buffer.duration)>.05) throw Error('Embedded audio duration differs from the saved Session.');
+        loaded.set(key,{bytes,buffer});
+      }
+      return loaded;
     });
-    if(revision===version){lastSave=version;$('save-state').textContent='Autosaved locally';}
+  }
+  function saveLocal(){
+    clearTimeout(saveTimer);
+    if(lastSave===revision)return updatedSave;
+    const id=workspacePages.sessionId(), version=revision, snapshot=clone(p), source=media;
+    const current=()=>revision===version&&workspacePages.sessionId()===id;
+    const write=updatedSave.then(()=>sessionRecovery.write(id,snapshot,source));
+    updatedSave=write.then(()=>{
+      if(current()){lastSave=version;$('save-state').textContent='Saved locally';}
+    },error=>{
+      if(current()){
+        $('save-state').textContent='Local save failed · use Save Document';
+        status(error.message||'Local storage could not save this Session.',true);
+      }
+    });
+    return updatedSave;
   }
   function autosave(){
     clearTimeout(saveTimer);
     if(!prefs.autosave){$('save-state').textContent='Autosave off';return;}
     $('save-state').textContent='Saving locally…';
-    saveTimer=setTimeout(()=>{
-      updatedSave=updatedSave.catch(()=>{}).then(saveLocal).catch(()=>{$('save-state').textContent='Autosave unavailable · use Save';});
-    },prefs.autosaveDelay*1000);
+    saveTimer=setTimeout(saveLocal,prefs.autosaveDelay*1000);
   }
   function before(){return clone(p);}
   function commit(previous, message, restart=true){
@@ -147,20 +167,6 @@
     armed=new Set([...armed].filter(id=>p.tracks.some(t=>t.id===id&&['audio','midi'].includes(t.type))));
     monitoring=new Set([...monitoring].filter(id=>p.tracks.some(t=>t.id===id&&t.type==='audio')));
   }
-  async function swap(next,raw=new Map(),message,canSwap=()=>true){
-    const loaded=new Map();
-    if(raw.size){
-      const context=ctx||(ctx=SW.audioContext());
-      for(const [id,bytes] of raw){
-        const buffer=await context.decodeAudioData(bytes.slice(0));
-        const mismatch=Math.abs(next.assets[id].duration-buffer.duration);
-        if(mismatch>.05) throw Error('Embedded audio duration differs from the saved session.');
-        loaded.set(id,{bytes,buffer});
-      }
-    }
-    if(!canSwap()) return;
-    replaceSession(next,loaded,message);
-  }
   function replaceSession(next,loaded,message){
     closeAudioMonitors();mutedMidiMonitors.clear();stopPlayback(false);stopPreview();reference.clear();releaseKeyboard();
     mixerScroll=0;globalEditor=null;globalContext=null;
@@ -169,29 +175,28 @@
     multiClipboard=[];noteClipboard=[];focusedClipboard.clear();editorFocus=null;pickedTracks.clear();picked.clear();notePicked.clear();mixerPeak.clear();editRange=null;editorPart=null;p=next;media=loaded;history=[];redo=[];armed.clear();monitoring.clear();playhead=0;
     const first=SW.timelineTracks(p)[0];
     trackId=first?.id||'master';pickedTracks=new Set([trackId]);clipId=first?.clips[0]?.id||null;noteId=null;
-    autoKey='volume';rollChanged=true;revision++;isDirty=false;autosave();render();
+    clearTimeout(saveTimer);
+    autoKey='volume';rollChanged=true;revision++;isDirty=false;
+    $('save-state').textContent=prefs.autosave?'':'Autosave off';render();
     if(message)status(message);
   }
   async function restore(){
     const initial=revision;
     try{
-      const db=await database();
-      const stored=await new Promise((resolve,reject)=>{
-        const req=db.transaction('workspace').objectStore('workspace').get('session');
-        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
-      });
-      if(stored&&revision===initial&&!busy){
-        SW.validateProject(stored.snapshot);
-        let restored=false;
-        await swap(stored.snapshot,stored.data,'Restored local session',()=>{
-          if(revision!==initial||isEditing())return false;
-          if(stored.id)workspacePages.restoreSessionId(stored.id);
-          restored=true;
-          return true;
-        });
-        if(restored){workspacePages.sessionChanged();workspacePages.draw();}
-      }
-    }catch{$('save-state').textContent='Autosave unavailable · use Save';}
+      const stored=await loadSession();
+      if(!stored||revision!==initial||isEditing())return;
+      stored.accept();
+      if(stored.id)workspacePages.restoreSessionId(stored.id);
+      const message=stored.recovered?'Recovered previous local revision':'Restored local Session';
+      replaceSession(stored.project,stored.media,message);
+      lastSave=revision;
+      $('save-state').textContent=stored.recovered?'Previous local revision recovered':message;
+      workspacePages.sessionChanged();workspacePages.draw();
+    }catch(error){
+      if(revision!==initial)return;
+      $('save-state').textContent='Local Session recovery unavailable';
+      status(error.message||'Open a portable Session file to continue.',true);
+    }
   }
   function selectTrack(id,renderNow=true,add=false){
     const oldClip=activeClip();
@@ -318,6 +323,18 @@
     fullRouting=large&&tab==='routing';
   }
   function bindWorkspace(){
+    const detail=$('workspace-detail');
+    const applyDetail=value=>{
+      const level=['beginner','intermediate','advanced','pro'].includes(value)?value:'pro';
+      document.body.dataset.workspaceDetail=detail.value=level;
+      panels.sync();
+    };
+    applyDetail(readSettings('sw-workspace-detail','pro'));
+    detail.onchange=()=>{
+      applyDetail(detail.value);
+      remember('sw-workspace-detail',detail.value);
+    };
+    $('find-command').onclick=()=>command('find');
     const lower=$('lower-workspace'), browser=$('browser-workspace');
     $('dock-detach').onclick=()=>panels.detach(lower,'Editors and mixer');
     $('browser-detach').onclick=()=>panels.detach(browser,'Browser');
@@ -3695,7 +3712,7 @@
     const data=SW.encodeProject(p,media);
     const copy=typeof copyName==='string';
     download(data,SW.cleanName(copy?copyName:p.name)+'.sonoravell','application/json');
-    if(!copy){isDirty=false;workspacePages.sessionChanged();workspacePages.writeSession();}
+    if(!copy){isDirty=false;workspacePages.sessionChanged();saveLocal();}
     status(copy?'Saved portable copy':'Saved portable project');
   }
   function addChannelSend(t,id,cue){
@@ -5844,7 +5861,10 @@
   }
   workspacePages=SW.createWorkspacePages({
     $,status,report,download,command,read:readSettings,remember,settings:()=>prefs,
-    put:storedWorkspace,get:storedWorkspace,canSwitch:()=>!isEditing(),audio:ensureAudio,enableMidi,
+    put:storedWorkspace,get:storedWorkspace,loadSession,
+    saveSessionLocally:saveLocal,
+    flushSession(){if(prefs.autosave&&isDirty&&lastSave!==revision)saveLocal();},
+    canSwitch:()=>!isEditing(),audio:ensureAudio,enableMidi,
     decoder:()=>ctx||(ctx=SW.audioContext()),decode:decodeAsset,
     session:()=>({project:p,media,history,redo,dirty:isDirty,position:playhead,track:trackId,clip:clipId}),
     setSession(snapshot){

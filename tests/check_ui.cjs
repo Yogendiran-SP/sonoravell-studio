@@ -49,7 +49,7 @@ const context=vm.createContext({
   localStorage:{getItem:k=>prefs.get(k),setItem:(k,v)=>prefs.set(k,v)},setTimeout:()=>0,clearTimeout(){},
   confirm:()=>true,prompt:()=>null,requestAnimationFrame:()=>1,cancelAnimationFrame(){},setInterval:()=>1,clearInterval(){}
 });
-for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions','workspace-documents','workspace-views','workspace-pages','session-views']){
+for(const source of ['model','arrangement','spatial','keyscheme','studio-panels','patch','patch-panel','audio','plugin-visuals','recording','formats','workflows','note-editor','settings','studio-shell','reference-video','panel-windows','midi-expression','track-icons','editor-actions','workspace-documents','workspace-views','workspace-pages','session-views','session-recovery']){
   vm.runInContext(fs.readFileSync(sources+source+'.js','utf8'),context,{filename:source+'.js'});
 }
 const app=fs.readFileSync(sources+'app.js','utf8').replace("if(prefs.startup==='restore'||prefs.startup==='start') restore();",

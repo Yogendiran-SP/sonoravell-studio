@@ -992,6 +992,13 @@ body:is([data-workspace=start],[data-workspace=mastering],[data-workspace=show])
 .session-monitor-channels section > strong { min-width: 105px; }
 video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; background: #080b0f; }
 
+body[data-workspace-detail="beginner"] [data-detail],
+body[data-workspace-detail="intermediate"] [data-detail="advanced"],
+body[data-workspace-detail="intermediate"] [data-detail="pro"],
+body[data-workspace-detail="advanced"] [data-detail="pro"] {
+  display: none;
+}
+
 </style>
 
 </head>
@@ -1005,6 +1012,7 @@ video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; backg
     <button type="button" data-workspace="mastering">Mastering</button>
     <button type="button" data-workspace="show">Show</button>
     <span class="spacer"></span>
+    <button type="button" id="find-command" title="Find Command (Ctrl+K)">Find Command</button>
     <button type="button" data-ws-action="quick-switch" title="Switch between open documents">Quick Switch</button>
   </nav>
   <section id="workspace-content" class="workspace-content" aria-label="Studio workspace" hidden></section>
@@ -1012,11 +1020,17 @@ video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; backg
     <section class="arrange-frame" aria-label="Arrangement">
       <div class="workspace-toolbar">
         <button id="insert-track" type="button" title="Insert Track (T)" aria-label="Insert Track"><span aria-hidden="true">+</span> Insert Track</button>
-        <button id="global-tracks" type="button" title="Show or hide global tracks" aria-label="Global tracks" aria-haspopup="true" aria-expanded="false"><span aria-hidden="true">+</span> Global Tracks</button>
+        <button data-detail="intermediate" id="global-tracks" type="button" title="Show or hide global tracks" aria-label="Global tracks" aria-haspopup="true" aria-expanded="false"><span aria-hidden="true">+</span> Global Tracks</button>
         <div class="divider"></div>
-        <div class="tools" id="arrange-tools" aria-label="Arrangement tools"></div><button id="macro-arrange-toggle" aria-pressed="false">Macros</button><div class="spacer"></div>
+        <div class="tools" id="arrange-tools" aria-label="Arrangement tools"></div><button data-detail="pro" id="macro-arrange-toggle" aria-pressed="false">Macros</button><div class="spacer"></div>
         <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping (N)">Snap</button><label class="snap-grid"><select id="snap" aria-label="Snap grid"><option value="0">Off</option><option value=".25">1/16</option><option value=".5" selected>1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="bar">Bar</option></select></label>
         <label class="zoom-label">Zoom <input id="zoom" type="range" min="15" max="150" value="53"></label>
+        <label>Controls <select id="workspace-detail">
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+          <option value="pro" selected>Pro</option>
+        </select></label>
       </div>
       <div id="arranger-macros" hidden></div>
       <div class="arrange-scroll" id="arrange-scroll" tabindex="0">
@@ -1033,10 +1047,10 @@ video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; backg
     <section class="dock" id="lower-workspace" aria-label="Editors and mixer">
       <div id="dock-resize" class="dock-resize panel-grip" role="separator" aria-label="Resize lower panel" aria-orientation="horizontal" tabindex="0"></div>
       <nav class="dock-tabs" aria-label="Editor">
-        <button data-tab="edit" title="Edit (F2)">Edit</button><button data-tab="mixer" title="Mixer (F3)">Mixer</button><button data-tab="automation" title="Automation (A)">Automation</button>
-        <button data-tab="routing" title="Signal Flow (F6)">Signal Flow</button><div class="spacer"></div>
-        <button id="dock-full" title="Fullscreen lower panel">Fullscreen</button>
-        <button id="dock-detach" title="Detach lower panel">Detach</button>
+        <button data-tab="edit" title="Edit (F2)">Edit</button><button data-tab="mixer" title="Mixer (F3)">Mixer</button><button data-detail="intermediate" data-tab="automation" title="Automation (A)">Automation</button>
+        <button data-detail="advanced" data-tab="routing" title="Signal Flow (F6)">Signal Flow</button><div class="spacer"></div>
+        <button data-detail="advanced" id="dock-full" title="Fullscreen lower panel">Fullscreen</button>
+        <button data-detail="pro" id="dock-detach" title="Detach lower panel">Detach</button>
       </nav>
       <div id="dock"></div>
     </section>
@@ -1045,7 +1059,7 @@ video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; backg
     </div>
     <aside id="browser-workspace" class="browser-workspace" aria-label="Browser" hidden>
       <div id="browser-resize" class="browser-resize panel-grip" role="separator" aria-label="Resize Browser" aria-orientation="vertical" tabindex="0"></div>
-      <header class="dock-tabs"><button id="browser-hide" aria-label="Hide Browser (F5)" aria-expanded="true" aria-controls="browser-workspace" title="Hide Browser (F5)">›</button><h2>Browser</h2><div class="spacer"></div><button id="browser-full">Fullscreen</button><button id="browser-detach">Detach</button></header>
+      <header class="dock-tabs"><button id="browser-hide" aria-label="Hide Browser (F5)" aria-expanded="true" aria-controls="browser-workspace" title="Hide Browser (F5)">›</button><h2>Browser</h2><div class="spacer"></div><button id="browser-full">Fullscreen</button><button data-detail="pro" id="browser-detach">Detach</button></header>
       <div id="browser-content"></div>
     </aside>
   </main>
@@ -1055,7 +1069,7 @@ video[data-ws-show-video] { display: block; width: 100%; max-height: 53vh; backg
     <label>Velocity <input id="key-velocity" type="range" min="1" max="127" value="100"><output id="key-vel-label">100</output></label>
     <div id="key-pads" aria-label="Playable notes"></div>
   </section>
-  <footer class="session-status"><span id="status" role="status">Ready</span><span class="spacer"></span><span id="save-state"></span></footer>
+  <footer class="session-status"><span id="status" role="status">Ready</span><span class="spacer"></span><span id="save-state" aria-live="polite"></span></footer>
   <section class="transport transport-bottom" aria-label="Transport">
     <div class="transport-cluster controls history"><button id="undo" aria-label="Undo" title="Undo (Ctrl+Z)">↶</button><button id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button><button id="help" aria-label="Help" title="Shortcuts and workflows">?</button></div>
     <div class="readout"><output id="position" aria-label="Bar, beat, subdivision">001.1.1</output><output id="time" aria-label="Elapsed time">0:00.000</output></div>
@@ -5804,19 +5818,16 @@ Object.assign(SW, (() => {
         sessions.set(sessionId,snapshot);sessionChanged();
       }
     }
-    function activateSession(snapshot,id){
+    function activateSession(snapshot,id,save=true){
+      api.flushSession();
       retainSession();
       sessionId=id;
       api.setSession(snapshot);
       switchPage('session');
       sessionChanged();
-      writeSession();
+      if(save)api.saveSessionLocally();
+      if(snapshot.recovered)status('Recovered previous local revision');
       draw();
-    }
-    function writeSession(){
-      const snapshot=api.session();
-      const data=new Map(Object.keys(snapshot.project.assets).map(id=>[id,snapshot.media.get(id)?.bytes]));
-      return api.put(storedKey(sessionId),{snapshot:clone(snapshot.project),data}).catch(()=>{});
     }
     async function loadAudio(raw,durations,videos=new Map()){
       const media=new Map();
@@ -5840,18 +5851,18 @@ Object.assign(SW, (() => {
       pending=true;
       let next;
       try{
-        const data=await api.get(storedKey(id));
-        if(!data)throw Error('This document has no browser copy. Open its portable file.');
         if(row.kind==='session'){
-          const p=SW.validateProject(data.snapshot);
-          next={project:p,media:await loadAudio(data.data,new Map(Object.entries(p.assets).map(([key,value])=>[key,value.duration])))};
+          next=await api.loadSession(id);
+          next.accept();
         }else{
+          const data=await api.get(storedKey(id));
+          if(!data)throw Error('This document has no browser copy. Open its portable file.');
           const {document:doc,files}=data;
           SW.validateWorkspaceDocument(doc);
           next={doc,media:await loadAudio(files,SW.workspaceAssets(doc),SW.workspaceVideos(doc))};
         }
       }finally{pending=false;}
-      if(next.project)activateSession(next,id);
+      if(next.project)activateSession(next,id,!next.recovered);
       else{install(next.doc,next.media);switchPage(next.doc.kind);position=0;stopPlayback();}
     }
     async function openPortable(file){
@@ -6497,7 +6508,7 @@ Object.assign(SW, (() => {
       if(id&&available(id)){api.command(id);event.preventDefault();}
       return true;
     }
-    return {bind,draw,switchPage,commands,available,keys,openPortable,writeSession,sessionChanged,midi,releaseNote,
+    return {bind,draw,switchPage,commands,available,keys,openPortable,sessionChanged,midi,releaseNote,
       dirty:()=>[...records.values()].some(row=>row.dirty)||[...sessions].some(([id,row])=>id!==sessionId&&row.dirty),
       page:()=>page,sessionId:()=>sessionId,
       restoreSessionId:id=>{if(typeof id==='string'&&/^[\w-]{1,100}$/.test(id))sessionId=id;}};
@@ -6841,6 +6852,146 @@ Object.assign(SW, (() => {
 </script>
 <script>
 'use strict';
+Object.assign(SW, (() => {
+  const pointerKey = 'session';
+  const documentKey = id => 'document:' + id;
+  const backupKey = id => 'session-backup:' + id;
+  const validId = id => typeof id === 'string' && /^[\w-]{1,100}$/.test(id);
+  const tokenOf = record => record?.commit ?? null;
+
+  function sessionMedia(project, media) {
+    return new Map(Object.entries(project.assets).map(([id, asset]) => {
+      const bytes = media.get(id)?.bytes;
+      if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength) {
+        throw Error('Missing audio: ' + asset.name);
+      }
+      return [id, bytes];
+    }));
+  }
+
+  function validateSessionRecord(record) {
+    const project = SW.validateProject(record?.snapshot);
+    if (!(record.data instanceof Map) || record.data.size !== Object.keys(project.assets).length) {
+      throw Error('The local Session has incomplete audio.');
+    }
+    for (const [id, asset] of Object.entries(project.assets)) {
+      const bytes = record.data.get(id);
+      if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength) throw Error('Missing audio: ' + asset.name);
+    }
+    return project;
+  }
+
+  function createSessionRecovery(database) {
+    const observed = new Map();
+
+    async function write(id, project, media) {
+      const snapshot = SW.validateProject(project);
+      const data = sessionMedia(snapshot, media);
+      const commit = SW.uid();
+      const db = await database();
+      const expected = observed.get(id);
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('workspace', 'readwrite');
+        const store = tx.objectStore('workspace');
+        const read = store.get(documentKey(id));
+        let failure;
+        read.onsuccess = () => {
+          const previous = read.result;
+          const unobserved = previous !== undefined && !expected;
+          if (unobserved || tokenOf(previous) !== (expected?.commit ?? null)) {
+            failure = Error('This Session changed in another window. Save a portable copy to keep your edits.');
+            tx.abort();
+            return;
+          }
+          if (previous && !expected?.recovered) store.put(previous, backupKey(id));
+          store.put({snapshot, data, commit}, documentKey(id));
+          store.put({id, recoveryVersion: 1}, pointerKey);
+        };
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(failure || tx.error || Error('The local Session save was interrupted.'));
+      });
+      observed.set(id, {commit, recovered: false});
+    }
+
+    async function read(id) {
+      const db = await database();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('workspace', 'readonly');
+        const store = tx.objectStore('workspace');
+        let primary, backup, legacy, failure;
+        function readDocument() {
+          const latest = store.get(documentKey(id));
+          latest.onsuccess = () => { primary = latest.result; };
+          const prior = store.get(backupKey(id));
+          prior.onsuccess = () => { backup = prior.result; };
+        }
+        if (id !== undefined) {
+          readDocument();
+        } else {
+          const pointer = store.get(pointerKey);
+          pointer.onsuccess = () => {
+            const record = pointer.result;
+            if (!record) return;
+            id = validId(record.id) ? record.id : undefined;
+            if (record.recoveryVersion === undefined) {
+              legacy = record;
+              if (id) readDocument();
+            } else if (record.recoveryVersion === 1 && id) {
+              readDocument();
+            } else {
+              failure = Error('This local Session uses an unsupported recovery format.');
+            }
+          };
+        }
+        tx.oncomplete = () => {
+          if (failure) reject(failure);
+          else if (id || legacy) resolve({id, primary, backup, legacy});
+          else resolve(null);
+        };
+        tx.onabort = () => reject(tx.error || Error('Local Session recovery was interrupted.'));
+      });
+    }
+
+    async function load(id, decode) {
+      const records = await read(id);
+      if (!records) return null;
+      const {primary, backup, legacy} = records;
+      const latest = primary ?? legacy;
+      if (Number.isInteger(latest?.snapshot?.version) && latest.snapshot.version > 1) {
+        throw Error('This local Session was saved by a newer version of Sonoravell.');
+      }
+      let failure;
+      for (const [kind, record] of [['primary', latest], ['backup', backup], ['legacy', primary && legacy]]) {
+        if (!record) continue;
+        let project, media;
+        try {
+          project = validateSessionRecord(record);
+          const durations = new Map(Object.entries(project.assets).map(([key, asset]) => [key, asset.duration]));
+          media = await decode(record.data, durations);
+        } catch (error) {
+          failure = error;
+          continue;
+        }
+        const recovered = kind !== 'primary';
+        return {
+          id: records.id, project, media, recovered,
+          accept() {
+            if (records.id) observed.set(records.id, {commit: tokenOf(primary), recovered});
+          }
+        };
+      }
+      throw failure || Error('No local recovery copy exists for this Session.');
+    }
+
+    return {write, load};
+  }
+
+  return {createSessionRecovery};
+})());
+
+</script>
+<script>
+'use strict';
 (() => {
   const {clamp,clone,uid,project,demo,channel,clip,note,effect,fx,instruments,noteName,songEnd,seconds,quantize,splitClip,laneSpecs,laneValue,setLaneValue,validRoute}=SW;
   const $=id=>document.getElementById(id)||panels.get(id);
@@ -6922,30 +7073,50 @@ Object.assign(SW, (() => {
       if(!globalThis.indexedDB){reject(Error('Browser storage is unavailable.'));return;}
       const request=indexedDB.open('soundweave-studio',1);
       request.onupgradeneeded=()=>request.result.createObjectStore('workspace');
-      request.onsuccess=()=>resolve(request.result);
+      request.onsuccess=()=>{
+        const db=request.result;
+        db.onversionchange=()=>{db.close();dbPromise=undefined;};
+        resolve(db);
+      };
       request.onerror=()=>reject(request.error);
-    });
+    }).catch(error=>{dbPromise=undefined;throw error;});
     return dbPromise;
   }
-  async function saveLocal(){
-    const db=await database(), version=revision, snapshot=clone(p);
-    const data=new Map(Object.keys(snapshot.assets).filter(id=>media.has(id)).map(id=>[id,media.get(id).bytes]));
-    await new Promise((resolve,reject)=>{
-      const tx=db.transaction('workspace','readwrite');
-      const store=tx.objectStore('workspace');
-      store.put({snapshot,data,id:workspacePages.sessionId()},'session');
-      store.put({snapshot,data},'document:'+workspacePages.sessionId());
-      tx.oncomplete=resolve;tx.onabort=tx.onerror=()=>reject(tx.error);
+  const sessionRecovery=SW.createSessionRecovery(database);
+  async function loadSession(id){
+    return sessionRecovery.load(id,async (raw,durations)=>{
+      const loaded=new Map();
+      if(!raw.size)return loaded;
+      const context=ctx||(ctx=SW.audioContext());
+      for(const [key,bytes] of raw){
+        const buffer=await context.decodeAudioData(bytes.slice(0));
+        if(Math.abs(durations.get(key)-buffer.duration)>.05) throw Error('Embedded audio duration differs from the saved Session.');
+        loaded.set(key,{bytes,buffer});
+      }
+      return loaded;
     });
-    if(revision===version){lastSave=version;$('save-state').textContent='Autosaved locally';}
+  }
+  function saveLocal(){
+    clearTimeout(saveTimer);
+    if(lastSave===revision)return updatedSave;
+    const id=workspacePages.sessionId(), version=revision, snapshot=clone(p), source=media;
+    const current=()=>revision===version&&workspacePages.sessionId()===id;
+    const write=updatedSave.then(()=>sessionRecovery.write(id,snapshot,source));
+    updatedSave=write.then(()=>{
+      if(current()){lastSave=version;$('save-state').textContent='Saved locally';}
+    },error=>{
+      if(current()){
+        $('save-state').textContent='Local save failed · use Save Document';
+        status(error.message||'Local storage could not save this Session.',true);
+      }
+    });
+    return updatedSave;
   }
   function autosave(){
     clearTimeout(saveTimer);
     if(!prefs.autosave){$('save-state').textContent='Autosave off';return;}
     $('save-state').textContent='Saving locally…';
-    saveTimer=setTimeout(()=>{
-      updatedSave=updatedSave.catch(()=>{}).then(saveLocal).catch(()=>{$('save-state').textContent='Autosave unavailable · use Save';});
-    },prefs.autosaveDelay*1000);
+    saveTimer=setTimeout(saveLocal,prefs.autosaveDelay*1000);
   }
   function before(){return clone(p);}
   function commit(previous, message, restart=true){
@@ -6989,20 +7160,6 @@ Object.assign(SW, (() => {
     armed=new Set([...armed].filter(id=>p.tracks.some(t=>t.id===id&&['audio','midi'].includes(t.type))));
     monitoring=new Set([...monitoring].filter(id=>p.tracks.some(t=>t.id===id&&t.type==='audio')));
   }
-  async function swap(next,raw=new Map(),message,canSwap=()=>true){
-    const loaded=new Map();
-    if(raw.size){
-      const context=ctx||(ctx=SW.audioContext());
-      for(const [id,bytes] of raw){
-        const buffer=await context.decodeAudioData(bytes.slice(0));
-        const mismatch=Math.abs(next.assets[id].duration-buffer.duration);
-        if(mismatch>.05) throw Error('Embedded audio duration differs from the saved session.');
-        loaded.set(id,{bytes,buffer});
-      }
-    }
-    if(!canSwap()) return;
-    replaceSession(next,loaded,message);
-  }
   function replaceSession(next,loaded,message){
     closeAudioMonitors();mutedMidiMonitors.clear();stopPlayback(false);stopPreview();reference.clear();releaseKeyboard();
     mixerScroll=0;globalEditor=null;globalContext=null;
@@ -7011,29 +7168,28 @@ Object.assign(SW, (() => {
     multiClipboard=[];noteClipboard=[];focusedClipboard.clear();editorFocus=null;pickedTracks.clear();picked.clear();notePicked.clear();mixerPeak.clear();editRange=null;editorPart=null;p=next;media=loaded;history=[];redo=[];armed.clear();monitoring.clear();playhead=0;
     const first=SW.timelineTracks(p)[0];
     trackId=first?.id||'master';pickedTracks=new Set([trackId]);clipId=first?.clips[0]?.id||null;noteId=null;
-    autoKey='volume';rollChanged=true;revision++;isDirty=false;autosave();render();
+    clearTimeout(saveTimer);
+    autoKey='volume';rollChanged=true;revision++;isDirty=false;
+    $('save-state').textContent=prefs.autosave?'':'Autosave off';render();
     if(message)status(message);
   }
   async function restore(){
     const initial=revision;
     try{
-      const db=await database();
-      const stored=await new Promise((resolve,reject)=>{
-        const req=db.transaction('workspace').objectStore('workspace').get('session');
-        req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
-      });
-      if(stored&&revision===initial&&!busy){
-        SW.validateProject(stored.snapshot);
-        let restored=false;
-        await swap(stored.snapshot,stored.data,'Restored local session',()=>{
-          if(revision!==initial||isEditing())return false;
-          if(stored.id)workspacePages.restoreSessionId(stored.id);
-          restored=true;
-          return true;
-        });
-        if(restored){workspacePages.sessionChanged();workspacePages.draw();}
-      }
-    }catch{$('save-state').textContent='Autosave unavailable · use Save';}
+      const stored=await loadSession();
+      if(!stored||revision!==initial||isEditing())return;
+      stored.accept();
+      if(stored.id)workspacePages.restoreSessionId(stored.id);
+      const message=stored.recovered?'Recovered previous local revision':'Restored local Session';
+      replaceSession(stored.project,stored.media,message);
+      lastSave=revision;
+      $('save-state').textContent=stored.recovered?'Previous local revision recovered':message;
+      workspacePages.sessionChanged();workspacePages.draw();
+    }catch(error){
+      if(revision!==initial)return;
+      $('save-state').textContent='Local Session recovery unavailable';
+      status(error.message||'Open a portable Session file to continue.',true);
+    }
   }
   function selectTrack(id,renderNow=true,add=false){
     const oldClip=activeClip();
@@ -7160,6 +7316,18 @@ Object.assign(SW, (() => {
     fullRouting=large&&tab==='routing';
   }
   function bindWorkspace(){
+    const detail=$('workspace-detail');
+    const applyDetail=value=>{
+      const level=['beginner','intermediate','advanced','pro'].includes(value)?value:'pro';
+      document.body.dataset.workspaceDetail=detail.value=level;
+      panels.sync();
+    };
+    applyDetail(readSettings('sw-workspace-detail','pro'));
+    detail.onchange=()=>{
+      applyDetail(detail.value);
+      remember('sw-workspace-detail',detail.value);
+    };
+    $('find-command').onclick=()=>command('find');
     const lower=$('lower-workspace'), browser=$('browser-workspace');
     $('dock-detach').onclick=()=>panels.detach(lower,'Editors and mixer');
     $('browser-detach').onclick=()=>panels.detach(browser,'Browser');
@@ -10537,7 +10705,7 @@ Object.assign(SW, (() => {
     const data=SW.encodeProject(p,media);
     const copy=typeof copyName==='string';
     download(data,SW.cleanName(copy?copyName:p.name)+'.sonoravell','application/json');
-    if(!copy){isDirty=false;workspacePages.sessionChanged();workspacePages.writeSession();}
+    if(!copy){isDirty=false;workspacePages.sessionChanged();saveLocal();}
     status(copy?'Saved portable copy':'Saved portable project');
   }
   function addChannelSend(t,id,cue){
@@ -12686,7 +12854,10 @@ Object.assign(SW, (() => {
   }
   workspacePages=SW.createWorkspacePages({
     $,status,report,download,command,read:readSettings,remember,settings:()=>prefs,
-    put:storedWorkspace,get:storedWorkspace,canSwitch:()=>!isEditing(),audio:ensureAudio,enableMidi,
+    put:storedWorkspace,get:storedWorkspace,loadSession,
+    saveSessionLocally:saveLocal,
+    flushSession(){if(prefs.autosave&&isDirty&&lastSave!==revision)saveLocal();},
+    canSwitch:()=>!isEditing(),audio:ensureAudio,enableMidi,
     decoder:()=>ctx||(ctx=SW.audioContext()),decode:decodeAsset,
     session:()=>({project:p,media,history,redo,dirty:isDirty,position:playhead,track:trackId,clip:clipId}),
     setSession(snapshot){

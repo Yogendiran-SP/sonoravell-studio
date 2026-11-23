@@ -45,6 +45,14 @@ Reference pages
 - [Fender Studio, Mastering and Release tutorial](https://www.youtube.com/watch?v=njCaNxj2L9M)
 - [Fender Studio Pro, Performance View](https://fenderstudiopromanual.fender.com/en/Content/Show_Topics/Show_Perform.htm)
 
+### Local Session recovery
+
+Session edits autosave in the browser, including referenced audio. Reopen the last Session from Preferences or select it from Start. If the newest recovery copy cannot be read, Sonoravell can open the previous revision for that Session and reports the fallback in the status bar. When another window has already saved a newer revision, use **File → Save Document** to export your edits as a separate portable file. Recovery depends on browser storage for the current origin. Use portable files to keep independent backups.
+
+### Workspace controls
+
+The **Controls** selector above the Arrangement offers Beginner, Intermediate, Advanced, and Pro. Beginner keeps the core arrangement and mixing controls. Intermediate adds global tracks and automation shortcuts. Advanced adds Signal Flow and fullscreen controls. Pro shows the full toolbar, including Macros and panel detachment. The chosen level is remembered locally. **Find Command** and Ctrl+K open the same searchable command list at every level.
+
 ## First tests
 
 ### Workspace and Mixer
@@ -210,7 +218,9 @@ In Studio One or Fender Studio Pro, use the keyboard mapping scheme menu’s **E
 
 Run `node tests/check_recording.cjs` to verify timed PCM capture and the encoded fallback using audio device doubles. Run `node tests/check_ui.cjs`, `node tests/check_panels.cjs`, and `node tests/check_patch_panel.cjs` for Console controls, viewport restoration, graph panning and rewiring, track insertion and retention, global events, loop locators, action values, scoped shortcuts, and monitoring using test doubles. Run `node tests/check.cjs` for preference profile validation, project and MIDI round trips, live graph topology, folder-bus restoration, signal types, feedback rejection, spatial gains, WAV format, keymap translation, MIDI expression, sustain, and audio scheduling with test doubles. Run `python3 tests/check_local.py` for the localhost service, plug-in scan fixtures, native worker payloads, and FFmpeg codecs. Run `python3 build.py` after changing the source to regenerate the standalone HTML and embed its artwork.
 
-The automated checks cover project data, view wiring, and launcher behavior. Interactive Chromium playback and native browser window behavior, physical audio and MIDI devices on Windows, and rendering through an installed third-party plug-in remain unverified. Sonoravell incorporates selected workflow details from the references below. Full Fender feature parity remains open, including proprietary stock plug-ins, native ASIO, Studio One projects, deep comping and pitch workflows, and dedicated mastering and show workspaces.
+The GitHub checks build the standalone HTML on Windows, macOS, and Linux. The Linux Chromium smoke test uses a simulated microphone to verify recording, imported audio, browser recovery, and WAV export. To run it locally with Playwright installed, use `node tests/browser-smoke.cjs`. Physical audio and MIDI devices, native browser window behavior, and rendering with an installed third-party plug-in require separate verification.
+
+The initial roadmap work covers part of PRJ-03 (local Session recovery), UX-06 (progressive control presets), and OPS-01/02 (automated checks and packaging). The G0 native real-time audio, redistribution, and hardware acceptance criteria remain open. Prerelease tags prepare a draft release and ZIP after the checks pass.
 
 ## Sources
 

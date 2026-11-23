@@ -7,7 +7,7 @@
   <title>Sonoravell Studio</title>
   <link rel="icon" type="image/svg+xml" href="assets/app-icon.svg">
   <link rel="stylesheet" href="studio.css">
-  <script defer src="model.js"></script><script defer src="arrangement.js"></script><script defer src="formats.js"></script><script defer src="spatial.js"></script><script defer src="keyscheme.js"></script><script defer src="studio-panels.js"></script><script defer src="patch.js"></script><script defer src="patch-panel.js"></script><script defer src="audio.js"></script><script defer src="plugin-visuals.js"></script><script defer src="recording.js"></script><script defer src="workflows.js"></script><script defer src="note-editor.js"></script><script defer src="settings.js"></script><script defer src="studio-shell.js"></script><script defer src="reference-video.js"></script><script defer src="panel-windows.js"></script><script defer src="midi-expression.js"></script><script defer src="track-icons.js"></script><script defer src="editor-actions.js"></script><script defer src="workspace-documents.js"></script><script defer src="workspace-views.js"></script><script defer src="workspace-pages.js"></script><script defer src="session-views.js"></script><script defer src="app.js"></script>
+  <script defer src="model.js"></script><script defer src="arrangement.js"></script><script defer src="formats.js"></script><script defer src="spatial.js"></script><script defer src="keyscheme.js"></script><script defer src="studio-panels.js"></script><script defer src="patch.js"></script><script defer src="patch-panel.js"></script><script defer src="audio.js"></script><script defer src="plugin-visuals.js"></script><script defer src="recording.js"></script><script defer src="workflows.js"></script><script defer src="note-editor.js"></script><script defer src="settings.js"></script><script defer src="studio-shell.js"></script><script defer src="reference-video.js"></script><script defer src="panel-windows.js"></script><script defer src="midi-expression.js"></script><script defer src="track-icons.js"></script><script defer src="editor-actions.js"></script><script defer src="workspace-documents.js"></script><script defer src="workspace-views.js"></script><script defer src="workspace-pages.js"></script><script defer src="session-views.js"></script><script defer src="session-recovery.js"></script><script defer src="app.js"></script>
 </head>
 <body>
   <nav id="studio-menu" class="studio-menu" role="menubar" aria-label="Studio commands"></nav>
@@ -19,6 +19,7 @@
     <button type="button" data-workspace="mastering">Mastering</button>
     <button type="button" data-workspace="show">Show</button>
     <span class="spacer"></span>
+    <button type="button" id="find-command" title="Find Command (Ctrl+K)">Find Command</button>
     <button type="button" data-ws-action="quick-switch" title="Switch between open documents">Quick Switch</button>
   </nav>
   <section id="workspace-content" class="workspace-content" aria-label="Studio workspace" hidden></section>
@@ -26,11 +27,17 @@
     <section class="arrange-frame" aria-label="Arrangement">
       <div class="workspace-toolbar">
         <button id="insert-track" type="button" title="Insert Track (T)" aria-label="Insert Track"><span aria-hidden="true">+</span> Insert Track</button>
-        <button id="global-tracks" type="button" title="Show or hide global tracks" aria-label="Global tracks" aria-haspopup="true" aria-expanded="false"><span aria-hidden="true">+</span> Global Tracks</button>
+        <button data-detail="intermediate" id="global-tracks" type="button" title="Show or hide global tracks" aria-label="Global tracks" aria-haspopup="true" aria-expanded="false"><span aria-hidden="true">+</span> Global Tracks</button>
         <div class="divider"></div>
-        <div class="tools" id="arrange-tools" aria-label="Arrangement tools"></div><button id="macro-arrange-toggle" aria-pressed="false">Macros</button><div class="spacer"></div>
+        <div class="tools" id="arrange-tools" aria-label="Arrangement tools"></div><button data-detail="pro" id="macro-arrange-toggle" aria-pressed="false">Macros</button><div class="spacer"></div>
         <button id="snap-toggle" type="button" aria-pressed="true" title="Toggle snapping (N)">Snap</button><label class="snap-grid"><select id="snap" aria-label="Snap grid"><option value="0">Off</option><option value=".25">1/16</option><option value=".5" selected>1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="bar">Bar</option></select></label>
         <label class="zoom-label">Zoom <input id="zoom" type="range" min="15" max="150" value="53"></label>
+        <label>Controls <select id="workspace-detail">
+          <option value="beginner">Beginner</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+          <option value="pro" selected>Pro</option>
+        </select></label>
       </div>
       <div id="arranger-macros" hidden></div>
       <div class="arrange-scroll" id="arrange-scroll" tabindex="0">
@@ -47,10 +54,10 @@
     <section class="dock" id="lower-workspace" aria-label="Editors and mixer">
       <div id="dock-resize" class="dock-resize panel-grip" role="separator" aria-label="Resize lower panel" aria-orientation="horizontal" tabindex="0"></div>
       <nav class="dock-tabs" aria-label="Editor">
-        <button data-tab="edit" title="Edit (F2)">Edit</button><button data-tab="mixer" title="Mixer (F3)">Mixer</button><button data-tab="automation" title="Automation (A)">Automation</button>
-        <button data-tab="routing" title="Signal Flow (F6)">Signal Flow</button><div class="spacer"></div>
-        <button id="dock-full" title="Fullscreen lower panel">Fullscreen</button>
-        <button id="dock-detach" title="Detach lower panel">Detach</button>
+        <button data-tab="edit" title="Edit (F2)">Edit</button><button data-tab="mixer" title="Mixer (F3)">Mixer</button><button data-detail="intermediate" data-tab="automation" title="Automation (A)">Automation</button>
+        <button data-detail="advanced" data-tab="routing" title="Signal Flow (F6)">Signal Flow</button><div class="spacer"></div>
+        <button data-detail="advanced" id="dock-full" title="Fullscreen lower panel">Fullscreen</button>
+        <button data-detail="pro" id="dock-detach" title="Detach lower panel">Detach</button>
       </nav>
       <div id="dock"></div>
     </section>
@@ -59,7 +66,7 @@
     </div>
     <aside id="browser-workspace" class="browser-workspace" aria-label="Browser" hidden>
       <div id="browser-resize" class="browser-resize panel-grip" role="separator" aria-label="Resize Browser" aria-orientation="vertical" tabindex="0"></div>
-      <header class="dock-tabs"><button id="browser-hide" aria-label="Hide Browser (F5)" aria-expanded="true" aria-controls="browser-workspace" title="Hide Browser (F5)">›</button><h2>Browser</h2><div class="spacer"></div><button id="browser-full">Fullscreen</button><button id="browser-detach">Detach</button></header>
+      <header class="dock-tabs"><button id="browser-hide" aria-label="Hide Browser (F5)" aria-expanded="true" aria-controls="browser-workspace" title="Hide Browser (F5)">›</button><h2>Browser</h2><div class="spacer"></div><button id="browser-full">Fullscreen</button><button data-detail="pro" id="browser-detach">Detach</button></header>
       <div id="browser-content"></div>
     </aside>
   </main>
@@ -69,7 +76,7 @@
     <label>Velocity <input id="key-velocity" type="range" min="1" max="127" value="100"><output id="key-vel-label">100</output></label>
     <div id="key-pads" aria-label="Playable notes"></div>
   </section>
-  <footer class="session-status"><span id="status" role="status">Ready</span><span class="spacer"></span><span id="save-state"></span></footer>
+  <footer class="session-status"><span id="status" role="status">Ready</span><span class="spacer"></span><span id="save-state" aria-live="polite"></span></footer>
   <section class="transport transport-bottom" aria-label="Transport">
     <div class="transport-cluster controls history"><button id="undo" aria-label="Undo" title="Undo (Ctrl+Z)">↶</button><button id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button><button id="help" aria-label="Help" title="Shortcuts and workflows">?</button></div>
     <div class="readout"><output id="position" aria-label="Bar, beat, subdivision">001.1.1</output><output id="time" aria-label="Elapsed time">0:00.000</output></div>
