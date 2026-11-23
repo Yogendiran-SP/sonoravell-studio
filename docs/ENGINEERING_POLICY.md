@@ -4,13 +4,9 @@ Status: **proposed engineering policy**, 23 Nov 2026. Based on Roger S. Pressman
 
 ## Start from the actual baseline
 
-Verified on main at `87bfa526dbc544127a1b70a3276a2b532fede2cf`:
-- C++20 engine, Win32 UI, default Windows waveOut audio at fixed 48 kHz / 16-bit stereo, two approximately 20 ms buffers;
-- four pre-rendered `After Hours` tracks, Play/Stop, live mute ramps and WAV export;
-- regression tests for deterministic score/mix/mutes/buffer ordering/WAV; native build/CTest CI across three operating systems;
-- MIT license.
+Verified at main `03a9016516a9378d7349d175996d9adc0c75cac0`: the native Win32 DAW now includes a basic editable and versioned local Session, embedded Audio Pool, WAV import, single-microphone recording, elementary MIDI note editing, ruler locate, workspaces, mute ramps, WAV render/export, and CI tests. See [CURRENT_BASELINE.md](CURRENT_BASELINE.md) for code-level evidence and limitations.
 
-Not demonstrated yet: professional low-latency audio callbacks with measured device latency/xruns, audio recording, general editable/savable session, Audio Pool import, MIDI input/Piano Roll, plugin host, arbitrary-user project recovery, mobile/cloud/collaboration/Live Show.
+Not demonstrated: low-latency physical audio callback/ASIO evidence, full-duplex multitrack capture, crash-safe take recovery, arbitrary external MIDI input, third-party plugin hosting, mobile/cloud/collaboration/Live Show.
 
 A successful CI run does not prove physical audio-interface reliability. The `--benchmark` command measures software mixing **without device I/O**.
 
