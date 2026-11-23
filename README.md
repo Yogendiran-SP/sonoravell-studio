@@ -11,7 +11,7 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 
 | Workspace | What you can do |
 | --- | --- |
-| Transport | Record from the default Windows input, play, stop, change tempo, and undo the last edit. Stop finalizes a recording as a new audio track. |
+| Transport | Record from the default Windows input, play, stop, change tempo, and undo the last edit. Stop finalizes a disk-backed take as a new audio track. |
 | Arrange | See bars, MIDI notes, audio clips, and the playback cursor. Click the ruler to start playback from a beat, or click a track lane to select it. |
 | Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move the first audio clip or remove the selected track. |
 | Browser | Import a PCM WAV, create an instrument track, or place an existing Audio Pool source on another track. |
@@ -54,7 +54,7 @@ frames, excluding device I/O and track preparation.
 This build covers the initial editable local Session slice from the roadmap.
 Recording currently creates one mono take from the Windows default input at
 a time and stops playback first. A committed Session uses staged file
-replacement. An in-progress take lives in memory until Stop, then in the
-Session until Save As. The G0 real-device latency/dropout benchmark and the
+replacement. **Browser → Recover take…** restores committed audio after an
+interruption. See [recording recovery](docs/RECORDING_RECOVERY.md). The G0 real-device latency/dropout benchmark and the
 G1 multitrack capture, external MIDI, project recovery, and configurable
 workspace acceptance tests remain open.

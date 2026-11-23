@@ -8,6 +8,7 @@
 
 #include "session.hpp"
 #include "windows_audio.hpp"
+#include "windows_capture.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -32,7 +33,7 @@ enum ControlId {
     tempoApplyId, commandId, focusId, inspectorId, trackListId, trackLabelId, beatLabelId, beatId,
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
-    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId,
+    toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -45,7 +46,6 @@ bool dirty = false;
 bool focused = false;
 bool inspectorShown = true, browserShown = true, mixerShown = true;
 unsigned playFrom = 0;
-unsigned takeTick = 0;
 std::uint32_t totalFrames = sessionFrames(project);
 
 std::wstring wide(const std::string& value) {
@@ -103,7 +103,7 @@ void layout(HWND window) {
     };
     show({inspectorId, trackLabelId, trackListId, beatLabelId, beatId, pitchLabelId, pitchId, lengthLabelId,
           lengthId, noteListId, noteId, updateNoteId, deleteNoteId, moveId, removeId}, inspectorShown);
-    show({browserId, importId, addTrackId, assetListId, placeId}, browserShown);
+    show({browserId, importId, addTrackId, assetListId, placeId, recoverId}, browserShown);
     show({mixerId, volumeLabelId, volumeId, volumeApplyId, muteId}, mixerShown);
     place(inspectorId, 10, 91, 173, height - 176);
     place(trackLabelId, 22, 122, 145, 18);
@@ -123,7 +123,8 @@ void layout(HWND window) {
     place(browserId, width - 183, 91, 173, height - 176);
     place(importId, width - 171, 124, 148, 28);
     place(addTrackId, width - 171, 162, 148, 28);
-    place(assetListId, width - 171, 209, 148, height - 458);
+    place(recoverId, width - 171, 200, 148, 28);
+    place(assetListId, width - 171, 242, 148, height - 491);
     place(placeId, width - 171, height - 241, 148, 28);
     place(mixerId, 10, height - 77, width - 20, 50);
     place(volumeLabelId, 25, height - 54, 94, 18);
@@ -310,7 +311,7 @@ void refresh(HWND window, int index) {
     if (!project.assets.empty()) SendMessageW(sources, LB_SETCURSEL, 0, 0);
     EnableWindow(field(window, placeId), !capture.active() && !project.assets.empty());
     SetDlgItemInt(window, tempoId, project.tempo, FALSE);
-    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, tempoApplyId}) {
+    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, tempoApplyId, recoverId}) {
         EnableWindow(field(window, id), !capture.active());
     }
     EnableWindow(field(window, undoId), !capture.active() && static_cast<bool>(undo));
@@ -411,7 +412,7 @@ bool discardEdits(HWND window) {
                                  MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2) == IDYES;
 }
 
-std::filesystem::path selectFile(HWND window, bool save, const wchar_t* filter, const wchar_t* extension) {
+std::filesystem::path selectFile(HWND window, bool save, const wchar_t* filter, const wchar_t* extension, const wchar_t* directory = nullptr) {
     wchar_t path[32768]{};
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
@@ -420,6 +421,7 @@ std::filesystem::path selectFile(HWND window, bool save, const wchar_t* filter, 
     dialog.lpstrFile = path;
     dialog.nMaxFile = static_cast<DWORD>(std::size(path));
     dialog.lpstrDefExt = extension;
+    dialog.lpstrInitialDir = directory;
     dialog.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR |
                    (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
     if (save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog)) return path;
@@ -449,16 +451,27 @@ void addAudio(HWND window, AudioAsset asset, unsigned tick) {
          static_cast<int>(project.tracks.size() - 1));
 }
 
-void finishTake(HWND window) {
-    auto samples = capture.finish();
-    if (!samples.empty()) {
-        const auto id = newIdFor(project.assets);
-        addAudio(window, {id, "Recording " + std::to_string(id), std::move(samples)}, takeTick);
-        status(window, L"Recording added. Save Session to keep the take.");
-    } else {
+void addRecoveredTake(HWND window, RecoveredTake take, bool interrupted) {
+    if (take.stereo.empty()) {
         refresh(window, selectedTrack(window));
-        status(window, L"No microphone samples were captured.");
+        status(window, interrupted ? L"Recording stopped before any audio could be recovered. Check device and disk space."
+                                   : L"No recoverable audio was found in this take.");
+        return;
     }
+    const auto id = newIdFor(project.assets);
+    try {
+        addAudio(window, {id, "Recording " + std::to_string(id), std::move(take.stereo)}, take.startTick);
+    } catch (const std::exception&) {
+        throw std::runtime_error("The take file is intact. It did not fit this Session. Try Recover take in a smaller Session.");
+    }
+    status(window, interrupted || !take.finalized
+        ? L"Recovered verified audio up to the interruption. Save this Session to keep the edit."
+        : L"Recording added. The recovery copy remains on disk. Save Session to keep the edit.");
+}
+
+void finishTake(HWND window) {
+    auto result = capture.finish();
+    addRecoveredTake(window, std::move(result.take), result.interrupted);
 }
 
 void showCommands(HWND window) {
@@ -473,7 +486,7 @@ void showCommands(HWND window) {
     const auto query = lowercase(queryText);
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
          {openId, L"Open Session..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
-         {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
+         {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
          {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
          {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
          {toggleInspectorId, L"Toggle Inspector"}, {toggleBrowserId, L"Toggle Browser"},
@@ -507,8 +520,10 @@ void execute(HWND window, int id) {
         return;
     }
     if (id == stopId) {
-        if (capture.active()) finishTake(window);
-        else {
+        if (capture.active()) {
+            capture.requestStop();
+            status(window, L"Finishing the recording on disk...");
+        } else {
             audio.stop();
             const auto rect = arrangeRect(window);
             InvalidateRect(window, &rect, FALSE);
@@ -553,17 +568,23 @@ void execute(HWND window, int id) {
     } else if (id == playId) {
         audio.play(renderedSession(), playFrom);
         status(window, L"Playing Session.");
+    } else if (id == recoverId) {
+        auto directory = takeRecoveryDirectory();
+        std::filesystem::create_directories(directory);
+        constexpr wchar_t takeFilter[] = L"Sonoravell recorded takes\0*.sntake\0";
+        const auto path = selectFile(window, false, takeFilter, L"sntake", directory.c_str());
+        if (!path.empty()) addRecoveredTake(window, recoverTake(path), false);
     } else if (id == recordId) {
         if (project.tracks.size() >= maxTracks || project.assets.size() >= maxAssets) {
             throw std::runtime_error("The Session is at its track or audio source limit.");
         }
-        takeTick = beatInput(window, beatId, false);
+        const auto takeTick = beatInput(window, beatId, false);
         const auto capacity = recordingCapacity(project, takeTick);
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
         audio.stop();
-        capture.start(capacity);
+        capture.start(capacity, takeTick);
         refresh(window, selectedTrack(window));
-        status(window, L"Recording the default microphone. Press Stop to keep the take.");
+        status(window, L"Recording to local recovery storage. Press Stop to finish the take.");
     } else if (id == importId) {
         const auto path = selectFile(window, false, wavFilter, L"wav");
         if (!path.empty()) {
@@ -661,7 +682,7 @@ void createWorkspace(HWND window) {
          {saveId, L"Save as..."}, {exportId, L"Export..."}, {focusId, L"Focus"}, {recordId, L"Record"},
          {playId, L"Play"}, {stopId, L"Stop"}, {undoId, L"Undo"}, {tempoApplyId, L"Set"}, {commandId, L"Commands"},
          {noteId, L"Add note"}, {updateNoteId, L"Update"}, {deleteNoteId, L"Delete"}, {moveId, L"Move audio clip"}, {removeId, L"Remove track..."},
-         {importId, L"Import WAV..."}, {placeId, L"Place audio source"},
+         {importId, L"Import WAV..."}, {placeId, L"Place audio source"}, {recoverId, L"Recover take..."},
          {addTrackId, L"Add instrument"}, {volumeApplyId, L"Apply"}}) {
         addControl(window, entry.first, L"BUTTON", entry.second, WS_TABSTOP);
     }
@@ -747,7 +768,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         }
         case WM_TIMER: {
             if (wParam != transportTimer) return 0;
-            if (capture.full()) finishTake(window);
+            if (capture.finished()) finishTake(window);
             const auto state = audio.state();
             if (state == Output::State::completed || state == Output::State::failed) {
                 audio.stop();
@@ -760,7 +781,11 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case WM_CLOSE:
-            if (capture.active()) finishTake(window);
+            if (capture.active()) {
+                capture.requestStop();
+                status(window, L"Finishing the recording on disk. Close the window after the take appears.");
+                return 0;
+            }
             if (discardEdits(window)) {
                 audio.stop();
                 DestroyWindow(window);
