@@ -122,6 +122,7 @@ bool saveCaptureDiagnostics(const std::filesystem::path& journal, const WasapiIn
         const auto& clock = stream.timing.clock;
         const auto rejected = clock.rejected();
         output << "WASAPI shared capture\n"
+               << "Duplex attempt (0 = independent): " << clock.attempt() << '\n'
                << "Requested input: " << (report.requested ? utf8(report.requested->name) : "Windows default") << '\n'
                << "Requested endpoint ID: " << (report.requested ? utf8(report.requested->id) : "Default") << '\n'
                << "Resolved input: " << utf8(report.resolved.name) << '\n'
@@ -177,10 +178,12 @@ struct Capture::Run final : CaptureSink {
         if (config) {
             writer = std::thread([this] { write(); });
             producer = std::thread([this, frames, config = std::move(*config)]() mutable {
-                wasapi = runWasapiCapture(*this, std::move(config), frames, stop.get());
+                wasapi = runWasapiCapture(*this, std::move(config), frames, stop.get(),
+                                           notices ? &notices->captureStarted : nullptr);
                 if (wasapi->stream.end == CaptureEnd::interrupted) interrupted.store(true);
                 inputDone.store(true);
                 dataAvailable.signal();
+                if (notices) notices->captureExited(wasapi->stream.error);
             });
             return;
         }
@@ -192,6 +195,14 @@ struct Capture::Run final : CaptureSink {
         }
         writer = std::thread([this] { write(); });
         producer = std::thread([this, frames] { capture(frames); });
+    }
+
+    void failedToLaunch() noexcept {
+        interrupted.store(true);
+        inputDone.store(true);
+        dataAvailable.signal();
+        if (!writer.joinable()) closeJournal();
+        notices->captureExited(CaptureError::driver);
     }
 
     void queueAvailable(unsigned& frames) noexcept {
@@ -285,9 +296,15 @@ struct Capture::Run final : CaptureSink {
             writeFailed.store(true);
             interrupted.store(true);
             stop.signal();
+            if (notices) notices->storageFailed();
         }
+        closeJournal();
+    }
+
+    void closeJournal() noexcept {
         journal.reset();
         writerDone.store(true);
+        if (notices) notices->journalClosed(writeFailed.load());
     }
 
     std::filesystem::path path;
@@ -295,6 +312,7 @@ struct Capture::Run final : CaptureSink {
     Event stop{true}, dataAvailable;
     std::unique_ptr<InputDevice> input;
     std::optional<WasapiInputReport> wasapi;
+    std::shared_ptr<DuplexNotices> notices;
     TakeQueue queue;
     std::atomic<bool> inputDone{false}, writerDone{false}, interrupted{false}, writeFailed{false};
     std::thread producer, writer;
@@ -315,7 +333,7 @@ Capture::~Capture() = default;
 bool Capture::active() const { return static_cast<bool>(run); }
 bool Capture::finished() const { return run && run->writerDone.load() && run->inputDone.load(); }
 
-void Capture::start(unsigned frames, unsigned tick, unsigned deviceId, std::optional<WasapiInputConfig> wasapi) {
+std::unique_ptr<Capture::Run> Capture::prepare(unsigned frames, unsigned tick) const {
     if (active() || !frames || frames > maxAssetSamples / channelCount) {
         throw std::runtime_error("There is no capacity for another recording.");
     }
@@ -323,9 +341,30 @@ void Capture::start(unsigned frames, unsigned tick, unsigned deviceId, std::opti
     std::filesystem::create_directories(directory);
     const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
     const auto name = "Take-" + std::to_string(stamp) + "-" + std::to_string(std::random_device{}()) + takeExtension;
-    auto next = std::make_unique<Run>(directory / name, tick);
+    return std::make_unique<Run>(directory / name, tick);
+}
+
+void Capture::start(unsigned frames, unsigned tick, unsigned deviceId, std::optional<WasapiInputConfig> wasapi) {
+    auto next = prepare(frames, tick);
     next->begin(frames, deviceId, std::move(wasapi));
     run = std::move(next);
+}
+
+bool Capture::startDuplex(unsigned frames, unsigned tick, WasapiInputConfig wasapi,
+                          DuplexTransport& transport, const std::shared_ptr<DuplexNotices>& notices) {
+    auto next = prepare(frames, tick);
+    const auto actions = transport.begin(notices);
+    if (!actions.startStreams) throw std::runtime_error("The previous duplex attempt is still settling.");
+    wasapi.stream.attempt = actions.attempt;
+    run = std::move(next);
+    run->notices = notices;
+    try {
+        run->begin(frames, WAVE_MAPPER, std::move(wasapi));
+        return true;
+    } catch (...) {
+        run->failedToLaunch();
+        return false;
+    }
 }
 
 void Capture::requestStop() { if (run) run->stop.signal(); }

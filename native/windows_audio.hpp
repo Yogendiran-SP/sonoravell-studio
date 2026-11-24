@@ -1,5 +1,6 @@
 #pragma once
 
+#include "duplex_transport.hpp"
 #include "windows_wasapi.hpp"
 
 #include <windows.h>
@@ -106,9 +107,11 @@ public:
     const std::optional<WasapiOutputReport>& lastWasapiRun() const { return wasapiRun; }
     bool lastPlaybackUsedWasapi() const { return lastUsedWasapi; }
 
+    void requestStop() { if (worker.joinable()) worker.request_stop(); }
+
     void stop() {
         if (worker.joinable()) {
-            worker.request_stop();
+            requestStop();
             worker.join();
         }
         playbackState.store(State::stopped);
@@ -122,18 +125,22 @@ public:
         muteMask.store(mask);
     }
 
-    void play(const SessionAudio& session, unsigned startFrame, unsigned deviceId,
-              std::optional<WasapiOutputConfig> wasapi = {}) {
+    void play(std::shared_ptr<const SessionAudio> session, unsigned startFrame, unsigned deviceId,
+              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}) {
         stop();
         lastUsedWasapi = wasapi.has_value();
+        if (wasapi) wasapiRun.reset();
         played.store(0);
         playbackState.store(State::playing);
         try {
-            worker = std::jthread([this, &session, startFrame, deviceId, wasapi = std::move(wasapi)](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(session, decodeMuteMask(muteMask.load()), startFrame);
+            worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
+                                   wasapi = std::move(wasapi), duplex = std::move(duplex)](std::stop_token stopToken) mutable {
+                PlaybackMixer mixer(*session, decodeMuteMask(muteMask.load()), startFrame);
                 if (wasapi) {
-                    wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), muteMask, played, stopToken);
+                    wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), muteMask, played, stopToken,
+                                                duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
                     playbackState.store(wasapiRun->stream.end == RenderEnd::failed ? State::failed : State::completed);
+                    if (duplex) duplex->renderExited(wasapiRun->stream.error);
                     return;
                 }
                 bool ok;

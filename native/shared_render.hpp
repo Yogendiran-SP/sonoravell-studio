@@ -52,5 +52,6 @@ TrackMutes decodeMuteMask(unsigned mask) noexcept;
 // device buffers and atomics. The endpoint owns its platform resources.
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
                                 SharedRenderConfig config, const std::atomic<unsigned>& muteMask,
-                                std::atomic<unsigned>& played, std::stop_token stop) noexcept;
+                                std::atomic<unsigned>& played, std::stop_token stop,
+                                std::atomic<bool>* ready = nullptr) noexcept;
 }

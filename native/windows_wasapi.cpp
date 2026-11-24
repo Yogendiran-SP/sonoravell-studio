@@ -26,7 +26,7 @@ public:
 
 class WasapiEndpoint final : public SharedRenderEndpoint {
 public:
-    explicit WasapiEndpoint(const AudioEndpointChoice& choice) : choice(choice) {}
+    WasapiEndpoint(const AudioEndpointChoice& choice, std::uint64_t attempt) : clock(0, attempt), choice(choice) {}
 
     RenderError open(SharedRenderConfig config, SharedRenderReport& report) noexcept override {
         if (!bufferReady.handle || !stopReady.handle) return checked(HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY));
@@ -83,7 +83,7 @@ public:
         UINT64 rate = 0;
         if (SUCCEEDED(client->GetService(IID_PPV_ARGS(audioClock.GetAddressOf()))) &&
             SUCCEEDED(audioClock->GetFrequency(&rate)) && rate) {
-            clock = StreamClock{rate};
+            clock = StreamClock{rate, clock.attempt()};
         } else {
             audioClock.Reset();
         }
@@ -178,7 +178,7 @@ std::vector<AudioEndpointInfo> listWasapiRenderEndpoints() {
 
 WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig config,
                                   const std::atomic<unsigned>& muteMask, std::atomic<unsigned>& played,
-                                  std::stop_token stop) noexcept {
+                                  std::stop_token stop, std::uint64_t attempt, std::atomic<bool>* ready) noexcept {
     const ComApartment apartment;
     if (FAILED(apartment.result)) {
         SharedRenderReport report;
@@ -186,13 +186,13 @@ WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig conf
         report.error = RenderError::driver;
         report.requestedFrames = config.stream.requestedFrames;
         report.nativeError = static_cast<std::uint32_t>(apartment.result);
-        return {report, std::move(config.output), {}};
+        return {report, std::move(config.output), {}, StreamClock{0, attempt}};
     }
-    WasapiEndpoint endpoint(config.output);
+    WasapiEndpoint endpoint(config.output, attempt);
     std::stop_callback wakeOnStop(stop, [&endpoint] {
         if (endpoint.stopReady.handle) SetEvent(endpoint.stopReady.handle);
     });
-    const auto report = renderShared(endpoint, mixer, config.stream, muteMask, played, stop);
+    const auto report = renderShared(endpoint, mixer, config.stream, muteMask, played, stop, ready);
     return {report, std::move(config.output), std::move(endpoint.resolved), endpoint.clock};
 }
 }

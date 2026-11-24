@@ -47,8 +47,9 @@ std::optional<double> CaptureTiming::driftPpm() const noexcept {
 }
 
 CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& sink,
-                                  CaptureStreamConfig config, unsigned limit) noexcept {
+                                  CaptureStreamConfig config, unsigned limit, std::atomic<bool>* ready) noexcept {
     CaptureStreamReport report;
+    report.timing.clock = StreamClock{sampleRate, config.attempt};
     report.requestedPeriodFrames = config.requestedFrames;
     const auto fail = [&](CaptureStage stage, CaptureError error, std::uint32_t code = 0) {
         report.end = CaptureEnd::interrupted;
@@ -84,6 +85,7 @@ CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& 
         fail(CaptureStage::start, start, endpoint.nativeError());
         return report;
     }
+    if (ready) ready->store(true, std::memory_order_relaxed);
     std::optional<std::uint64_t> nextFrame;
     while (report.acceptedFrames < limit && !endpoint.stoppedByUserOrWriter()) {
         if (const auto error = endpoint.wait(); error != CaptureError::none) {

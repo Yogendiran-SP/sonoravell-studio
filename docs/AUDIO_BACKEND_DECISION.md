@@ -15,7 +15,7 @@ between enumeration and stream open, so stream errors remain visible.
 | Backend | Decision | Reason |
 | --- | --- | --- |
 | Windows waveform audio | Keep as fallback | Existing 48 kHz PCM path and take journaling. Device selection can ship separately from a low-latency engine. |
-| Event-driven WASAPI shared mode | Independent, opt-in render and capture previews | Each stream resolves its own Windows endpoint and negotiates its own period. Capture feeds the existing take journal. See the [render](WASAPI_PREVIEW.md) and [capture](WASAPI_CAPTURE.md) acceptance gates. |
+| Event-driven WASAPI shared mode | Independent previews and opt-in experimental duplex | Each stream resolves its own Windows endpoint and negotiates its own period. Capture feeds the existing journal under the [recording-first transport](WASAPI_DUPLEX.md). |
 | WASAPI exclusive mode | Evaluate after shared-mode tests | Allows exclusive endpoint access, which changes interoperability. Require evidence that a specific workflow needs it. |
 | ASIO | Leave out of the MIT distribution pending license review | Steinberg's SDK provides GPLv3 and proprietary alternatives. The repository has no approved redistribution route for a proprietary SDK or a GPLv3 combined distribution. |
 
@@ -44,16 +44,16 @@ names, OS build, and any audible gaps. No latency claim follows from this test.
 
 ## Full-duplex dependencies
 
-The capture adapter owns a single input stream, feeds the bounded journal
-handoff and records correlated capture clock anchors. The Session transport
-still stops playback before recording. First qualify the input and output
-previews separately with physical endpoint loss and recording recovery.
+The capture adapter owns a single input stream and feeds the bounded journal
+handoff. Independent Record stops playback. The explicit experimental action
+joins the [recording-first lifecycle policy](WASAPI_COORDINATION.md) to both
+workers and uses a prepared journal to protect the take.
 
 The [clock model](WASAPI_CLOCKS.md) collects independent anchors and tests
-start offset, drift, and bad timestamp handling using simulated pairs. A
-future simultaneous test build needs a transport timeline, a transport adapter
-for the [recording-first lifecycle policy](WASAPI_COORDINATION.md), and an alignment error budget based on
-measured loopback behavior. Validate both streams under scheduling and
+start offset, drift, and bad timestamp handling using simulated pairs. The
+experimental take keeps its selected Session tick and reports qualified
+clock estimates separately. Establish an alignment error budget from physical
+loopback measurements. Validate both streams under scheduling and
 storage pressure, with bounded queues, explicit dropout/overrun reporting,
 and recovery of the last checksummed audio prefix if either endpoint fails.
 Monitoring, rate correction and synchronized operation depend on that evidence.
