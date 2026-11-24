@@ -15,6 +15,7 @@ Audit date: 2026-11-24. The experimental transport starts at `a4e4b5868e8f506b7b
 - Opt-in [WASAPI shared capture](WASAPI_CAPTURE.md) for a single mono take from a supported 48 kHz Windows input. Live packet checks, a bounded handoff and the existing journal preserve the accepted prefix on interruption. Capture and render choose endpoints and periods independently.
 - Independent [WASAPI clock diagnostics](WASAPI_CLOCKS.md) record capture and render position/QPC anchors. The paired clock model is exercised with simulated streams.
 - An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
+- The offline [hardware qualification tool](HARDWARE_QUALIFICATION.md) generates the reference Session and WAV, matches returned markers, and reports displacement, drift, and invalid evidence. The physical report template keeps hardware gates pending until measured.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
