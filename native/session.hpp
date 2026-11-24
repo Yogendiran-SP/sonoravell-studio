@@ -47,6 +47,7 @@ public:
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
     bool finished() const noexcept;
+    unsigned remainingFrames() const noexcept;
 
 private:
     const SessionAudio& audio;

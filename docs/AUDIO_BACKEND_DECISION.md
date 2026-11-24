@@ -15,7 +15,7 @@ between enumeration and stream open, so stream errors remain visible.
 | Backend | Decision | Reason |
 | --- | --- | --- |
 | Windows waveform audio | Keep as fallback | Existing 48 kHz PCM path and take journaling. Device selection can ship separately from a low-latency engine. |
-| Event-driven WASAPI shared mode | Prototype next | Windows exposes endpoints, mix formats, and supported engine periods. Try `IAudioClient3` where available and measure with the fallback path as a control. |
+| Event-driven WASAPI shared mode | Opt-in render preview | The Windows default endpoint supports system-period negotiation and custom period requests when the 48 kHz client format is supported. See the [implementation and acceptance gate](WASAPI_PREVIEW.md). |
 | WASAPI exclusive mode | Evaluate after shared-mode tests | Allows exclusive endpoint access, which changes interoperability. Require evidence that a specific workflow needs it. |
 | ASIO | Leave out of the MIT distribution pending license review | Steinberg's SDK provides GPLv3 and proprietary alternatives. The repository has no approved redistribution route for a proprietary SDK or a GPLv3 combined distribution. |
 
@@ -23,10 +23,9 @@ Sources: [Microsoft WASAPI overview](https://learn.microsoft.com/en-us/windows/w
 [Microsoft shared and exclusive streams](https://learn.microsoft.com/en-us/windows/win32/coreaudio/exclusive-mode-streams),
 [Steinberg ASIO SDK terms](https://github.com/audiosdk/asio/blob/main/LICENSE.txt).
 
-## Next interface boundary and acceptance
+## Interface boundary and next acceptance
 
-Separate endpoint enumeration, stream state, format negotiation and device
-notifications from GUI state. Keep the session mixer and journal behind a
+The shared-render contract separates buffer and stream lifecycle from the WASAPI adapter. Endpoint enumeration for WASAPI and device notifications remain follow-up work. Keep the session mixer and journal behind a
 bounded audio handoff. Prototype independent capture and render clocks with
 explicit discontinuity counters before adding mixed-rate full duplex. Record
 requested vs negotiated formats and periods, underruns, discontinuities,

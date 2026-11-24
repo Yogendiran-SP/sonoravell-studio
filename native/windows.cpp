@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cwchar>
 #include <cwctype>
 #include <exception>
 #include <functional>
@@ -36,6 +37,7 @@ enum ControlId {
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
     toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId, deviceId, selectInputId, selectOutputId,
+    selectWaveOutId, selectWasapiId, selectPeriodId, renderReportId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -44,6 +46,9 @@ std::unique_ptr<SessionAudio> prepared;
 Output audio;
 Capture capture;
 EndpointChoice inputChoice, outputChoice;
+bool useWasapi = false;
+SharedRenderConfig wasapiConfig;
+constexpr std::array periodChoices{0u, 256u, 512u, 1024u};
 std::function<void()> undo;
 bool dirty = false;
 bool autosavePending = false;
@@ -568,19 +573,124 @@ void chooseAudioDevice(HWND window, AudioDirection direction) {
     status(window, (kind + (choice ? choice->name : L"Windows default")).c_str());
 }
 
-void showAudioDevices(HWND window) {
-    const auto menu = CreatePopupMenu();
-    if (!menu) return;
-    const std::wstring input = L"Choose input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
-    const std::wstring output = L"Choose output  (" + (outputChoice ? outputChoice->name : L"Windows default") + L")";
-    AppendMenuW(menu, MF_STRING, selectInputId, input.c_str());
-    AppendMenuW(menu, MF_STRING, selectOutputId, output.c_str());
+const wchar_t* renderErrorText(RenderError error) {
+    switch (error) {
+    case RenderError::none: return L"None";
+    case RenderError::unsupportedFormat: return L"Unsupported client format. Try System period or WinMM.";
+    case RenderError::unsupportedPeriod: return L"Unsupported or locked engine period. Try System period or WinMM.";
+    case RenderError::deviceUnavailable: return L"Default endpoint unavailable. Check Windows sound settings and retry.";
+    case RenderError::deviceInvalidated: return L"Device became unavailable. Reconnect or select an output in Windows, then retry Play.";
+    case RenderError::timeout: return L"Timed out waiting for audio buffer events.";
+    case RenderError::invalidBuffer: return L"Endpoint reported invalid buffer data.";
+    case RenderError::driver: return L"Windows audio driver or service error.";
+    }
+    return L"Unknown error.";
+}
+
+const wchar_t* renderStageText(RenderStage stage) {
+    switch (stage) {
+    case RenderStage::open: return L"Open";
+    case RenderStage::prime: return L"Prime";
+    case RenderStage::start: return L"Start";
+    case RenderStage::stream: return L"Render";
+    case RenderStage::drain: return L"Drain";
+    case RenderStage::stop: return L"Stop";
+    }
+    return L"Unknown";
+}
+
+void showRenderReport(HWND window) {
+    if (audio.state() == Output::State::playing) {
+        status(window, L"Stop playback to view its diagnostic report.");
+        return;
+    }
+    audio.stop();
+    const auto& result = audio.lastWasapiRun();
+    if (!result) {
+        status(window, L"Run a WASAPI playback attempt to collect diagnostics.");
+        return;
+    }
+    const auto& report = *result;
+    const auto outcome = report.end == RenderEnd::completed ? L"Completed" :
+                         report.end == RenderEnd::cancelled ? L"Stopped" : L"Failed";
+    wchar_t nativeCode[16]{};
+    swprintf_s(nativeCode, std::size(nativeCode), L"0x%08X", report.nativeError);
+    const auto message = std::wstring(outcome) + L" • " + renderStageText(report.stage) +
+        L"\n" + renderErrorText(report.error) + L"\nNative status " + nativeCode +
+        L"\n\nClient format: 48000 Hz, 2 channels, 16-bit PCM" +
+        L"\nWindows mix: " + std::to_wstring(report.mixRate) + L" Hz / " + std::to_wstring(report.mixChannels) +
+        L" channels\nWindows conversion requested: " + (report.conversionEnabled ? L"Yes" : L"No") +
+        L"\nRequested period: " + (report.requestedFrames ? std::to_wstring(report.requestedFrames) : L"System") +
+        L"\nSelected custom period: " + (report.selectedPeriodFrames ? std::to_wstring(report.selectedPeriodFrames) : L"None") +
+        L"\nAllocated buffer: " + std::to_wstring(report.bufferFrames) + L" frames" +
+        L"\nSubmitted: " + std::to_wstring(report.submittedFrames) + L" frames" +
+        L"\n\nEmpty render-buffer events (suspected underruns): " + std::to_wstring(report.emptyBufferEvents) +
+        L"\nWait timeouts: " + std::to_wstring(report.waitTimeouts) +
+        L"\nDevice invalidations: " + std::to_wstring(report.deviceInvalidations);
+    MessageBoxW(window, message.c_str(), L"WASAPI playback diagnostics", MB_OK | MB_ICONINFORMATION);
+}
+
+unsigned popupDeviceMenu(HWND window, HMENU menu) {
     RECT toggle{};
     GetWindowRect(field(window, deviceId), &toggle);
     const auto selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY, toggle.left, toggle.bottom, 0, window, nullptr);
     DestroyMenu(menu);
-    if (selected == selectInputId) chooseAudioDevice(window, AudioDirection::input);
-    if (selected == selectOutputId) chooseAudioDevice(window, AudioDirection::output);
+    return selected;
+}
+
+void chooseWasapiPeriod(HWND window) {
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    for (std::size_t i = 0; i < periodChoices.size(); ++i) {
+        const auto frames = periodChoices[i];
+        const auto title = frames ? std::to_wstring(frames) + L" frames (request)" : L"System period";
+        AppendMenuW(menu, MF_STRING | (frames == wasapiConfig.requestedFrames ? MF_CHECKED : 0), i + 1, title.c_str());
+    }
+    const auto selected = popupDeviceMenu(window, menu);
+    if (!selected || capture.active()) return;
+    audio.stop();
+    wasapiConfig.requestedFrames = periodChoices.at(selected - 1);
+    InvalidateRect(window, nullptr, FALSE);
+    status(window, L"WASAPI buffer preference updated for the next Play.");
+}
+
+void setPlaybackBackend(HWND window, bool wasapi) {
+    audio.stop();
+    useWasapi = wasapi;
+    InvalidateRect(window, nullptr, FALSE);
+    status(window, useWasapi ? L"WASAPI shared playback selected. Uses the Windows default output."
+                             : L"WinMM playback selected.");
+}
+
+void showAudioDevices(HWND window) {
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    const std::wstring input = L"Choose input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
+    const std::wstring output = L"Choose WinMM output  (" + (outputChoice ? outputChoice->name : L"Windows default") + L")";
+    AppendMenuW(menu, MF_STRING, selectInputId, input.c_str());
+    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_GRAYED : 0), selectOutputId, output.c_str());
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_CHECKED : 0), selectWaveOutId, L"Playback: WinMM");
+    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_CHECKED : 0), selectWasapiId, L"Playback: WASAPI shared (Windows default output)");
+    AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_GRAYED : 0), selectPeriodId, L"WASAPI buffer period...");
+    AppendMenuW(menu, MF_STRING, renderReportId, L"Last WASAPI playback diagnostics...");
+    const auto selected = popupDeviceMenu(window, menu);
+    if (capture.active()) return;
+    switch (selected) {
+    case selectInputId: chooseAudioDevice(window, AudioDirection::input); break;
+    case selectOutputId: chooseAudioDevice(window, AudioDirection::output); break;
+    case selectPeriodId: chooseWasapiPeriod(window); break;
+    case renderReportId: showRenderReport(window); break;
+    case selectWaveOutId:
+    case selectWasapiId:
+        setPlaybackBackend(window, selected == selectWasapiId);
+        break;
+    }
+}
+
+void startPlayback() {
+    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig);
+    else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
 }
 
 void execute(HWND window, int id) {
@@ -658,7 +768,7 @@ void execute(HWND window, int id) {
             status(window, L"Exported 48 kHz stereo WAV.");
         }
     } else if (id == playId) {
-        audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
+        startPlayback();
         status(window, L"Playing Session.");
     } else if (id == recoverId) {
         auto directory = takeRecoveryDirectory();
@@ -832,7 +942,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 const auto ticks = static_cast<unsigned>(std::lround(frame * project.tempo / (60. * sampleRate))) * ticksPerBeat;
                 playFrom = frameAtTick(ticks, project.tempo);
                 if (playFrom >= totalFrames) playFrom = frameAtTick(ticks - ticksPerBeat, project.tempo);
-                if (audio.state() == Output::State::playing) audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
+                if (audio.state() == Output::State::playing) startPlayback();
                 InvalidateRect(window, &panel, FALSE);
             } else if (x >= panel.left && x < panel.right && y >= 0) {
                 const int index = y / arrangementRowHeight(panel);
@@ -865,7 +975,10 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             const auto state = audio.state();
             if (state == Output::State::completed || state == Output::State::failed) {
                 audio.stop();
-                status(window, state == Output::State::completed ? L"Playback complete." : L"Windows audio output failed.");
+                if (state == Output::State::completed) status(window, L"Playback complete.");
+                else if (const auto& report = audio.lastWasapiRun(); audio.lastPlaybackUsedWasapi() && report) {
+                    status(window, renderErrorText(report->error));
+                } else status(window, L"Windows audio output failed.");
             }
             if (state != Output::State::stopped) {
                 const auto rect = arrangeRect(window);
@@ -922,6 +1035,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         } catch (const std::runtime_error&) {
             // A stale explicit selection must not silently open the default input.
         }
+        const auto savedProject = project;
+        if (useWasapi || wasapiConfig.requestedFrames) return 1;
+        setPlaybackBackend(window, true);
+        if (!useWasapi || project != savedProject || audio.state() != Output::State::stopped) return 1;
+        setPlaybackBackend(window, false);
+        if (useWasapi || project != savedProject) return 1;
         execute(window, newId);
         execute(window, addTrackId);
         SetDlgItemInt(window, beatId, 2, FALSE);

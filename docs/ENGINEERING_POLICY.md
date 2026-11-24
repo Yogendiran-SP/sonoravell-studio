@@ -4,9 +4,9 @@ Status: **proposed engineering policy**, 23 Nov 2026. Based on Roger S. Pressman
 
 ## Start from the actual baseline
 
-Verified at main `03a9016516a9378d7349d175996d9adc0c75cac0`: the native Win32 DAW now includes a basic editable and versioned local Session, embedded Audio Pool, WAV import, single-microphone recording, elementary MIDI note editing, ruler locate, workspaces, mute ramps, WAV render/export, and CI tests. See [CURRENT_BASELINE.md](CURRENT_BASELINE.md) for code-level evidence and limitations.
+The native Win32 DAW baseline includes editable local Sessions, embedded audio, journaled mono recording, rotating Session checkpoints, and WinMM endpoint selection. See [CURRENT_BASELINE.md](CURRENT_BASELINE.md) for code-level evidence and limitations.
 
-Not demonstrated: low-latency physical audio callback/ASIO evidence, full-duplex multitrack capture, crash-safe take recovery, arbitrary external MIDI input, third-party plugin hosting, mobile/cloud/collaboration/Live Show.
+Not demonstrated: low-latency physical audio callback/ASIO evidence, full-duplex multitrack capture, hardware and power-cut validation of take recovery, arbitrary external MIDI input, third-party plugin hosting, mobile/cloud/collaboration/Live Show.
 
 A successful CI run does not prove physical audio-interface reliability. The `--benchmark` command measures software mixing **without device I/O**.
 
