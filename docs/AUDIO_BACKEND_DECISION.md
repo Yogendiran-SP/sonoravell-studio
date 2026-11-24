@@ -51,8 +51,8 @@ previews separately with physical endpoint loss and recording recovery.
 
 The [clock model](WASAPI_CLOCKS.md) collects independent anchors and tests
 start offset, drift, and bad timestamp handling using simulated pairs. A
-future simultaneous test build needs a transport timeline, a single owner
-for endpoint and writer lifecycle, and an alignment error budget based on
+future simultaneous test build needs a transport timeline, a transport adapter
+for the [recording-first lifecycle policy](WASAPI_COORDINATION.md), and an alignment error budget based on
 measured loopback behavior. Validate both streams under scheduling and
 storage pressure, with bounded queues, explicit dropout/overrun reporting,
 and recovery of the last checksummed audio prefix if either endpoint fails.

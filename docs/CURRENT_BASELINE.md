@@ -1,6 +1,6 @@
 # Current native-development baseline
 
-Audit date: 2026-11-24. The clock increment is based on main at `be703798862ed5342f77c2aff09245edf40ddc28`, the merge of [PR #13](https://github.com/Yogendiran-SP/sonoravell-studio/pull/13) for journaled WASAPI capture. Its [Windows, macOS and Linux checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45422458477) passed. Earlier evidence includes [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10) and [WASAPI render selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12).
+Audit date: 2026-11-24. The coordination increment starts at `66a95be28a1621d23099b8ac2f1e02d4b7bff69c`, the merge of [PR #14](https://github.com/Yogendiran-SP/sonoravell-studio/pull/14) for WASAPI clock evidence. Its [Windows, macOS and Linux checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425130199) passed. Earlier evidence includes [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10), [WASAPI render selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12) and [journaled WASAPI capture](https://github.com/Yogendiran-SP/sonoravell-studio/pull/13).
 
 ## Implemented in repository source
 
@@ -14,6 +14,7 @@ Audit date: 2026-11-24. The clock increment is based on main at `be703798862ed53
 - Opt-in event-driven WASAPI shared-mode render for an explicitly selected output or the Windows multimedia default, with period requests and endpoint and stream diagnostics. A lost output stops the attempt and can be reopened on an explicit Play. WinMM remains the launch default.
 - Opt-in [WASAPI shared capture](WASAPI_CAPTURE.md) for a single mono take from a supported 48 kHz Windows input. Live packet checks, a bounded handoff and the existing journal preserve the accepted prefix on interruption. Capture and render choose endpoints and periods independently.
 - Independent [WASAPI clock diagnostics](WASAPI_CLOCKS.md) record capture and render position/QPC anchors. The paired clock model is exercised with simulated streams.
+- A [recording-first duplex state machine](WASAPI_COORDINATION.md) is exercised in software and awaits transport integration and hardware qualification.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
