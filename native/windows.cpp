@@ -38,6 +38,7 @@ enum ControlId {
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
     toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId, deviceId, selectInputId, selectOutputId,
     selectWaveOutId, selectWasapiId, selectWasapiOutputId, selectPeriodId, renderReportId,
+    selectWaveInId, selectWasapiCaptureId, selectWasapiInputId, selectCaptureBufferId, captureReportId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -48,6 +49,15 @@ Capture capture;
 EndpointChoice inputChoice, outputChoice;
 bool useWasapi = false;
 WasapiOutputConfig wasapiConfig;
+bool useWasapiCapture = false;
+WasapiInputConfig wasapiInputConfig;
+struct CaptureDiagnostics {
+    WasapiInputReport report;
+    bool storageFailed;
+    bool saved;
+    std::size_t verifiedFrames;
+};
+std::optional<CaptureDiagnostics> lastCaptureDiagnostics;
 constexpr std::array periodChoices{0u, 256u, 512u, 1024u};
 std::function<void()> undo;
 bool dirty = false;
@@ -510,7 +520,18 @@ void addRecoveredTake(HWND window, RecoveredTake take, bool interrupted) {
 
 void finishTake(HWND window) {
     auto result = capture.finish();
+    const auto error = result.wasapi ? result.wasapi->stream.error : CaptureError::none;
+    const bool recovered = !result.take.stereo.empty();
+    if (result.wasapi) {
+        lastCaptureDiagnostics = CaptureDiagnostics{std::move(*result.wasapi), result.storageFailed,
+                                                     result.diagnosticsSaved, result.take.stereo.size() / channelCount};
+    }
     addRecoveredTake(window, std::move(result.take), result.interrupted);
+    if (result.storageFailed || error != CaptureError::none) {
+        const auto reason = wide(captureErrorText(result.storageFailed ? CaptureError::storage : error));
+        status(window, (reason + (recovered ? L" Verified audio recovered. Save the Session to keep it."
+                                            : L" No audio recovered.")).c_str());
+    }
 }
 
 void showCommands(HWND window) {
@@ -664,7 +685,7 @@ void chooseWasapiPeriod(HWND window) {
     status(window, L"WASAPI buffer preference updated for the next Play.");
 }
 
-void setWasapiOutput(HWND window, RenderEndpointChoice next) {
+void setWasapiOutput(HWND window, AudioEndpointChoice next) {
     const auto& current = wasapiConfig.output;
     const bool changed = current.has_value() != next.has_value() ||
                          (current && next && current->id != next->id);
@@ -675,28 +696,34 @@ void setWasapiOutput(HWND window, RenderEndpointChoice next) {
                            : L"WASAPI output already selected.");
 }
 
-void chooseWasapiOutput(HWND window) {
-    std::vector<RenderEndpointInfo> endpoints;
+void setWasapiInput(HWND window, AudioEndpointChoice next) {
+    wasapiInputConfig.input = std::move(next);
+    status(window, L"WASAPI input selected for the next Record.");
+}
+
+void chooseWasapiEndpoint(HWND window, AudioDirection direction) {
+    const bool input = direction == AudioDirection::input;
+    std::vector<AudioEndpointInfo> endpoints;
     bool discoveryFailed = false;
     try {
-        endpoints = listWasapiRenderEndpoints();
+        endpoints = input ? listWasapiCaptureEndpoints() : listWasapiRenderEndpoints();
     } catch (const std::runtime_error& error) {
         discoveryFailed = true;
         status(window, wide(error.what()).c_str());
     }
     const auto menu = CreatePopupMenu();
     if (!menu) return;
-    const auto& choice = wasapiConfig.output;
+    const auto& choice = input ? wasapiInputConfig.input : wasapiConfig.output;
     AppendMenuW(menu, MF_STRING | (!choice ? MF_CHECKED : 0), 1, L"Windows default");
-    if (discoveryFailed) AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Output discovery unavailable");
-    else if (choice && !findRenderEndpoint(endpoints, choice->id)) {
+    if (discoveryFailed) AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Endpoint discovery unavailable");
+    else if (choice && !findAudioEndpoint(endpoints, choice->id)) {
         const auto label = menuLabel(L"Unavailable: " + choice->name);
         AppendMenuW(menu, MF_STRING | MF_CHECKED | MF_GRAYED, 0, label.c_str());
     }
     for (std::size_t i = 0; i < endpoints.size(); ++i) {
         const auto& endpoint = endpoints[i];
         auto label = endpoint.name;
-        if (std::ranges::count(endpoints, endpoint.name, &RenderEndpointInfo::name) > 1) {
+        if (std::ranges::count(endpoints, endpoint.name, &AudioEndpointInfo::name) > 1) {
             label += L" (" + std::to_wstring(i + 1) + L")";
         }
         const auto flags = MF_STRING | (choice && choice->id == endpoint.id ? MF_CHECKED : 0);
@@ -704,8 +731,10 @@ void chooseWasapiOutput(HWND window) {
     }
     const auto selected = popupDeviceMenu(window, menu);
     if (!selected || capture.active()) return;
-    if (selected == 1) setWasapiOutput(window, {});
-    else setWasapiOutput(window, std::move(endpoints.at(selected - 2)));
+    AudioEndpointChoice next;
+    if (selected > 1) next = std::move(endpoints.at(selected - 2));
+    if (input) setWasapiInput(window, std::move(next));
+    else setWasapiOutput(window, std::move(next));
 }
 
 void setPlaybackBackend(HWND window, bool wasapi) {
@@ -716,14 +745,75 @@ void setPlaybackBackend(HWND window, bool wasapi) {
                              : L"WinMM playback selected.");
 }
 
+void setCaptureBackend(HWND window, bool wasapi) {
+    useWasapiCapture = wasapi;
+    status(window, wasapi ? L"WASAPI shared recording selected. Choose the input in Devices."
+                          : L"WinMM recording selected.");
+}
+
+void chooseCaptureBuffer(HWND window) {
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    for (std::size_t i = 0; i < periodChoices.size(); ++i) {
+        const auto frames = periodChoices[i];
+        const auto name = frames ? std::to_wstring(frames) + L" frames (period request)" : L"System buffer";
+        AppendMenuW(menu, MF_STRING | (wasapiInputConfig.stream.requestedFrames == frames ? MF_CHECKED : 0), i + 1, name.c_str());
+    }
+    const auto selected = popupDeviceMenu(window, menu);
+    if (!selected || capture.active()) return;
+    wasapiInputConfig.stream.requestedFrames = periodChoices.at(selected - 1);
+    status(window, L"WASAPI capture buffer preference updated for the next Record.");
+}
+
+void showCaptureReport(HWND window) {
+    if (!lastCaptureDiagnostics) {
+        status(window, L"Record a WASAPI take to collect capture diagnostics.");
+        return;
+    }
+    const auto& result = *lastCaptureDiagnostics;
+    const auto& stream = result.report.stream;
+    const auto input = result.report.requested ? L"Explicit: " + result.report.requested->name : L"Windows default";
+    const auto& resolved = result.report.resolved;
+    const auto& id = !resolved.id.empty() || !result.report.requested ? resolved.id : result.report.requested->id;
+    const auto outcome = result.storageFailed || stream.end == CaptureEnd::interrupted ? L"Interrupted" :
+                         stream.end == CaptureEnd::stopped ? L"Stopped by user" : L"Reached Session recording limit";
+    const auto encoding = stream.encoding == CaptureEncoding::float32 ? L"float32" :
+                          stream.encoding == CaptureEncoding::pcm16 ? L"PCM16" : L"unsupported";
+    wchar_t nativeCode[16]{};
+    swprintf_s(nativeCode, std::size(nativeCode), L"0x%08X", stream.nativeError);
+    const auto stamp = [](const std::optional<CaptureStamp>& value) {
+        return value ? std::to_wstring(value->deviceFrame) + L" / " + std::to_wstring(value->qpc100ns) : L"Unavailable";
+    };
+    const auto message = std::wstring(outcome) + L"\nStage: " + wide(captureStageText(stream.stage)) +
+        L"\nStream error: " + wide(captureErrorText(stream.error)) + L"\nNative status: " + nativeCode +
+        L"\nStorage write failed: " + (result.storageFailed ? L"Yes" : L"No") +
+        L"\n\nRequested input: " + input + L"\nResolved input: " + (resolved.name.empty() ? L"Unresolved" : resolved.name) +
+        L"\nEndpoint ID: " + (id.empty() ? L"Unavailable" : id) +
+        L"\n\nMix format: " + std::to_wstring(stream.rate) + L" Hz, " + std::to_wstring(stream.channels) + L" channel(s), " + encoding +
+        L"\nRequested period frames (0 = system): " + std::to_wstring(stream.requestedPeriodFrames) +
+        L"\nSelected custom period frames: " + std::to_wstring(stream.selectedPeriodFrames) +
+        L"\nAllocated buffer frames: " + std::to_wstring(stream.bufferFrames) +
+        L"\nQueued frames: " + std::to_wstring(stream.acceptedFrames) +
+        L"\nVerified journal frames: " + std::to_wstring(result.verifiedFrames) +
+        L"\nSilent frames: " + std::to_wstring(stream.silentFrames) +
+        L"\nFirst packet flagged at frame zero: " + (stream.initialDiscontinuityFlag ? L"Yes" : L"No") +
+        L"\nUnreliable timestamps: " + std::to_wstring(stream.timing.unreliableTimestamps) +
+        L"\nFirst correlated frame / QPC (100 ns): " + stamp(stream.timing.first) +
+        L"\nLast correlated frame / QPC (100 ns): " + stamp(stream.timing.last) +
+        L"\nCompanion diagnostics file saved: " + (result.saved ? L"Yes" : L"No");
+    MessageBoxW(window, message.c_str(), L"WASAPI capture diagnostics", MB_OK | MB_ICONINFORMATION);
+}
+
 void showAudioDevices(HWND window) {
     const auto menu = CreatePopupMenu();
     if (!menu) return;
-    const std::wstring input = L"Choose input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
+    const std::wstring input = L"Choose WinMM input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
     const std::wstring output = L"Choose WinMM output  (" + (outputChoice ? outputChoice->name : L"Windows default") + L")";
     const auto wasapiOutput = menuLabel(L"Choose WASAPI output  (" +
         (wasapiConfig.output ? wasapiConfig.output->name : L"Windows default") + L")");
-    AppendMenuW(menu, MF_STRING, selectInputId, menuLabel(input).c_str());
+    const auto wasapiInput = menuLabel(L"Choose WASAPI input  (" +
+        (wasapiInputConfig.input ? wasapiInputConfig.input->name : L"Windows default") + L")");
+    AppendMenuW(menu, MF_STRING | (useWasapiCapture ? MF_GRAYED : 0), selectInputId, menuLabel(input).c_str());
     AppendMenuW(menu, MF_STRING | (useWasapi ? MF_GRAYED : 0), selectOutputId, menuLabel(output).c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_CHECKED : 0), selectWaveOutId, L"Playback: WinMM");
@@ -731,14 +821,27 @@ void showAudioDevices(HWND window) {
     AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_GRAYED : 0), selectWasapiOutputId, wasapiOutput.c_str());
     AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_GRAYED : 0), selectPeriodId, L"WASAPI buffer period...");
     AppendMenuW(menu, MF_STRING, renderReportId, L"Last WASAPI playback diagnostics...");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (!useWasapiCapture ? MF_CHECKED : 0), selectWaveInId, L"Recording: WinMM");
+    AppendMenuW(menu, MF_STRING | (useWasapiCapture ? MF_CHECKED : 0), selectWasapiCaptureId, L"Recording: WASAPI shared");
+    AppendMenuW(menu, MF_STRING | (!useWasapiCapture ? MF_GRAYED : 0), selectWasapiInputId, wasapiInput.c_str());
+    AppendMenuW(menu, MF_STRING | (!useWasapiCapture ? MF_GRAYED : 0), selectCaptureBufferId, L"WASAPI capture buffer...");
+    AppendMenuW(menu, MF_STRING, captureReportId, L"Last WASAPI capture diagnostics...");
     const auto selected = popupDeviceMenu(window, menu);
     if (capture.active()) return;
     switch (selected) {
     case selectInputId: chooseAudioDevice(window, AudioDirection::input); break;
     case selectOutputId: chooseAudioDevice(window, AudioDirection::output); break;
-    case selectWasapiOutputId: chooseWasapiOutput(window); break;
+    case selectWasapiOutputId: chooseWasapiEndpoint(window, AudioDirection::output); break;
+    case selectWasapiInputId: chooseWasapiEndpoint(window, AudioDirection::input); break;
     case selectPeriodId: chooseWasapiPeriod(window); break;
+    case selectCaptureBufferId: chooseCaptureBuffer(window); break;
     case renderReportId: showRenderReport(window); break;
+    case captureReportId: showCaptureReport(window); break;
+    case selectWaveInId:
+    case selectWasapiCaptureId:
+        setCaptureBackend(window, selected == selectWasapiCaptureId);
+        break;
     case selectWaveOutId:
     case selectWasapiId:
         setPlaybackBackend(window, selected == selectWasapiId);
@@ -842,7 +945,8 @@ void execute(HWND window, int id) {
         const auto capacity = recordingCapacity(project, takeTick);
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
         audio.stop();
-        capture.start(capacity, takeTick, resolveWindowsAudioEndpoint(AudioDirection::input, inputChoice));
+        if (useWasapiCapture) capture.start(capacity, takeTick, WAVE_MAPPER, wasapiInputConfig);
+        else capture.start(capacity, takeTick, resolveWindowsAudioEndpoint(AudioDirection::input, inputChoice));
         refresh(window, selectedTrack(window));
         status(window, L"Recording to local recovery storage. Press Stop to finish the take.");
     } else if (id == importId) {
@@ -1096,13 +1200,21 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const auto savedProject = project;
         if (useWasapi || wasapiConfig.stream.requestedFrames || wasapiConfig.output) return 1;
         setPlaybackBackend(window, true);
-        setWasapiOutput(window, RenderEndpointInfo{L"{ci-output}", L"Fixture output"});
+        setWasapiOutput(window, AudioEndpointInfo{L"{ci-output}", L"Fixture output"});
         if (!useWasapi || project != savedProject || audio.state() != Output::State::stopped ||
             !wasapiConfig.output || wasapiConfig.output->id != L"{ci-output}") return 1;
         setPlaybackBackend(window, false);
         if (useWasapi || project != savedProject || !wasapiConfig.output) return 1;
         setWasapiOutput(window, {});
         if (wasapiConfig.output || project != savedProject) return 1;
+        if (useWasapiCapture || wasapiInputConfig.input || wasapiInputConfig.stream.requestedFrames) return 1;
+        setCaptureBackend(window, true);
+        setWasapiInput(window, AudioEndpointInfo{L"{ci-input}", L"Fixture input"});
+        if (!useWasapiCapture || !wasapiInputConfig.input || wasapiInputConfig.input->id != L"{ci-input}" ||
+            capture.active() || project != savedProject || useWasapi || wasapiConfig.output) return 1;
+        setCaptureBackend(window, false);
+        setWasapiInput(window, {});
+        if (useWasapiCapture || wasapiInputConfig.input || project != savedProject) return 1;
         execute(window, newId);
         execute(window, addTrackId);
         SetDlgItemInt(window, beatId, 2, FALSE);

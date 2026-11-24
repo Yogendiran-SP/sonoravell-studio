@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <optional>
 #include <stop_token>
 
 namespace sonoravell {
@@ -19,12 +18,6 @@ struct SharedRenderConfig {
     // Zero requests the system event period. Other values are client frames.
     unsigned requestedFrames = 0;
 };
-
-struct PeriodRange {
-    unsigned fundamental, minimum, maximum;
-};
-
-std::optional<unsigned> chooseRenderPeriod(unsigned requested, PeriodRange range) noexcept;
 
 struct SharedRenderReport {
     RenderEnd end = RenderEnd::completed;

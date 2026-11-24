@@ -41,6 +41,8 @@ ctest --test-dir build -C Release --output-on-failure
 
 Use **Devices** to select the WinMM input and output for the app run. For the opt-in playback preview, choose **Playback: WASAPI shared**, then **Choose WASAPI output** to select an active output or follow the Windows default. Choose **System period** or request a custom period. Find the output identity and stream result under **Last WASAPI playback diagnostics**. Switch back to **Playback: WinMM** to use the fallback. [WASAPI scope and physical test procedure](docs/WASAPI_PREVIEW.md)
 
+For the capture preview, choose **Devices → Recording: WASAPI shared → Choose WASAPI input**. Start with **System buffer** and a 48 kHz Windows input. **Last WASAPI capture diagnostics** shows the format, stream outcome and verified journal frames. [Capture workflow and physical verification](docs/WASAPI_CAPTURE.md)
+
 The Windows CI build also checks the native workspace commands. Linux and macOS
 CI build and test the shared mixer, Session storage, and audio import code.
 

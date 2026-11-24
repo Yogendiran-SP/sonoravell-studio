@@ -5,16 +5,6 @@
 #include <limits>
 
 namespace sonoravell {
-std::optional<unsigned> chooseRenderPeriod(unsigned requested, PeriodRange range) noexcept {
-    if (!requested || !range.fundamental || !range.minimum || range.minimum > range.maximum) return {};
-    const std::uint64_t step = range.fundamental;
-    const auto first = (range.minimum + step - 1) / step;
-    const auto last = range.maximum / step;
-    if (first > last) return {};
-    const auto nearest = (requested + step / 2) / step;
-    return static_cast<unsigned>(std::clamp(nearest, first, last) * step);
-}
-
 TrackMutes decodeMuteMask(unsigned mask) noexcept {
     static_assert(maxTracks <= std::numeric_limits<unsigned>::digits);
     TrackMutes muted{};

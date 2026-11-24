@@ -1,6 +1,6 @@
 # Windows audio backend decision
 
-**Scope** — GOV-04, ENG-01, ENG-04 and HW-01. Risks R01, R50, R51 and R53.
+**Scope** — GOV-04, ENG-01, ENG-04, HW-01 and REC-01. Risks R01, R04, R05, R14, R50, R51 and R53.
 
 The existing WinMM playback and recording paths remain the default. The
 WinMM migration extracts endpoint discovery and selection from the GUI and
@@ -15,7 +15,7 @@ between enumeration and stream open, so stream errors remain visible.
 | Backend | Decision | Reason |
 | --- | --- | --- |
 | Windows waveform audio | Keep as fallback | Existing 48 kHz PCM path and take journaling. Device selection can ship separately from a low-latency engine. |
-| Event-driven WASAPI shared mode | Opt-in render preview | The user can choose an explicit output or the Windows multimedia default. The stream negotiates the period against the resolved endpoint. See the [implementation and acceptance gate](WASAPI_PREVIEW.md). |
+| Event-driven WASAPI shared mode | Independent, opt-in render and capture previews | Each stream resolves its own Windows endpoint and negotiates its own period. Capture feeds the existing take journal. See the [render](WASAPI_PREVIEW.md) and [capture](WASAPI_CAPTURE.md) acceptance gates. |
 | WASAPI exclusive mode | Evaluate after shared-mode tests | Allows exclusive endpoint access, which changes interoperability. Require evidence that a specific workflow needs it. |
 | ASIO | Leave out of the MIT distribution pending license review | Steinberg's SDK provides GPLv3 and proprietary alternatives. The repository has no approved redistribution route for a proprietary SDK or a GPLv3 combined distribution. |
 
@@ -36,38 +36,23 @@ the existing Session audio model. See the [WASAPI verification procedure](WASAPI
 
 For the WinMM physical endpoint check, select **Devices → Choose WinMM output** and
 choose the built-in headphones, then play the demo. Select the default
-microphone or AudioBox under **Choose input**, record a short take, stop,
+microphone or AudioBox under **Choose WinMM input**, record a short take, stop,
 save and reopen. Unplug the explicitly selected interface before opening the
 next stream and verify that the error is visible and the project stays
 readable. Reopen **Devices** after reconnecting. Record the driver and device
 names, OS build, and any audible gaps. No latency claim follows from this test.
 
-## Next increment — capture-only WASAPI shared mode
+## Full-duplex dependencies
 
-Reuse the endpoint ID model with capture-direction discovery. Keep an
-independent event-driven capture adapter, with event waits outside packet
-handling. Start with a single mono take and explicitly supported input
-formats. Preallocate the conversion and handoff buffers, pair each successful
-packet acquisition with its release, and pass ordered blocks to the existing
-bounded queue and checksummed journal writer. Keep WinMM input available.
+The capture adapter owns a single input stream, feeds the bounded journal
+handoff and records correlated capture clock anchors. The Session transport
+still stops playback before recording. First qualify the input and output
+previews separately with physical endpoint loss and recording recovery.
 
-Track three separate conditions. A packet flagged silent contributes its
-reported frame count as zeros. A data discontinuity or invalidation ends the
-take with a visible reason and a recoverable contiguous prefix. A timestamp
-error marks timing evidence unreliable. Capture and render endpoints can
-have different clock offsets and drift even at the same nominal rate. Retain
-input device frame positions and correlated QPC timestamps for analysis. Test
-offset, monotonicity, missing timestamps and injected drift before proposing
-alignment or rate correction for full duplex.
-
-The capture increment passes its automated gate when scripted packets reach
-the journal in order, one release follows each acquired packet, and device
-loss, queue saturation, disk-write failure and process termination recover
-exactly the verified prefix without silently inserting samples. The previously
-saved `.sonora` must reopen and the user must be able to recover the take into
-a Session. Physical acceptance repeats record, Stop, reconnect and forced
-termination with a Windows microphone or AudioBox and records the format and
-diagnostics. Full-duplex and calibrated loopback measurements have separate gates.
-
-[Microsoft capture packet API](https://learn.microsoft.com/windows/win32/api/audioclient/nf-audioclient-iaudiocaptureclient-getbuffer)
-and [buffer flags](https://learn.microsoft.com/windows/win32/api/audioclient/ne-audioclient-_audclnt_bufferflags).
+Then prototype correlation of the independent capture and render clocks
+against QPC, including reset, missing timestamps, start offset and relative
+drift. Define a transport timeline and an alignment error budget based on
+measured loopback behavior. Validate both streams under scheduling and
+storage pressure, with bounded queues, explicit dropout/overrun reporting,
+and recovery of the last checksummed audio prefix if either endpoint fails.
+Monitoring, rate correction and synchronized operation depend on that evidence.

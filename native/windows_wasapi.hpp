@@ -1,23 +1,23 @@
 #pragma once
 
-#include "render_endpoints.hpp"
+#include "audio_endpoints.hpp"
 #include "shared_render.hpp"
 
 namespace sonoravell {
 struct WasapiOutputConfig {
     SharedRenderConfig stream;
-    RenderEndpointChoice output;
+    AudioEndpointChoice output;
 };
 
 struct WasapiOutputReport {
     SharedRenderReport stream;
-    RenderEndpointChoice requested;
-    RenderEndpointInfo resolved;
+    AudioEndpointChoice requested;
+    AudioEndpointInfo resolved;
 };
 
 // Enumerates active render endpoints for the control thread. A failed
 // enumeration throws; an empty inventory is a successful empty result.
-std::vector<RenderEndpointInfo> listWasapiRenderEndpoints();
+std::vector<AudioEndpointInfo> listWasapiRenderEndpoints();
 
 WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig config,
                                   const std::atomic<unsigned>& muteMask, std::atomic<unsigned>& played,

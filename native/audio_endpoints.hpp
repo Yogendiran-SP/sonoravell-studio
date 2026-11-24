@@ -8,21 +8,21 @@
 #include <vector>
 
 namespace sonoravell {
-struct RenderEndpointInfo {
+struct AudioEndpointInfo {
     std::wstring id;
     std::wstring name;
 };
 
-using RenderEndpointChoice = std::optional<RenderEndpointInfo>;
+using AudioEndpointChoice = std::optional<AudioEndpointInfo>;
 
-inline const RenderEndpointInfo* findRenderEndpoint(std::span<const RenderEndpointInfo> endpoints,
+inline const AudioEndpointInfo* findAudioEndpoint(std::span<const AudioEndpointInfo> endpoints,
                                                     std::wstring_view id) noexcept {
-    const auto item = std::ranges::find(endpoints, id, &RenderEndpointInfo::id);
+    const auto item = std::ranges::find(endpoints, id, &AudioEndpointInfo::id);
     return item == endpoints.end() ? nullptr : &*item;
 }
 
 // Labels are for display. Keep the ID even if two endpoints share a name.
-inline void sortRenderEndpoints(std::vector<RenderEndpointInfo>& endpoints) {
+inline void sortAudioEndpoints(std::vector<AudioEndpointInfo>& endpoints) {
     std::ranges::sort(endpoints, [](const auto& a, const auto& b) {
         if (a.name == b.name) return a.id < b.id;
         return a.name < b.name;
@@ -31,7 +31,7 @@ inline void sortRenderEndpoints(std::vector<RenderEndpointInfo>& endpoints) {
 
 // The default lookup runs only for a deliberate default choice.
 template<class Explicit, class Default>
-auto routeRenderEndpoint(const RenderEndpointChoice& choice, Explicit direct, Default systemDefault) {
+auto routeAudioEndpoint(const AudioEndpointChoice& choice, Explicit direct, Default systemDefault) {
     if (choice) return direct(choice->id);
     return systemDefault();
 }

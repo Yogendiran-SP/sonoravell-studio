@@ -1,5 +1,6 @@
+#include "shared_audio_period.hpp"
 #include "shared_render.hpp"
-#include "render_endpoints.hpp"
+#include "audio_endpoints.hpp"
 
 #include <algorithm>
 #include <array>
@@ -96,12 +97,12 @@ public:
 }
 
 int main() {
-    check(chooseRenderPeriod(256, {48, 96, 480}) == 240, "Expected round to nearest fundamental period.");
-    check(chooseRenderPeriod(16, {48, 96, 480}) == 96, "Expected clamp to the supported minimum.");
-    check(chooseRenderPeriod(std::numeric_limits<unsigned>::max(), {48, 96, 480}) == 480,
+    check(chooseSharedPeriod(256, {48, 96, 480}) == 240, "Expected round to nearest fundamental period.");
+    check(chooseSharedPeriod(16, {48, 96, 480}) == 96, "Expected clamp to the supported minimum.");
+    check(chooseSharedPeriod(std::numeric_limits<unsigned>::max(), {48, 96, 480}) == 480,
           "Expected clamp without integer overflow.");
-    check(!chooseRenderPeriod(256, {0, 96, 480}) && !chooseRenderPeriod(256, {48, 97, 105}) &&
-          !chooseRenderPeriod(0, {48, 96, 480}), "Invalid period ranges or system requests must stay distinct.");
+    check(!chooseSharedPeriod(256, {0, 96, 480}) && !chooseSharedPeriod(256, {48, 97, 105}) &&
+          !chooseSharedPeriod(0, {48, 96, 480}), "Invalid period ranges or system requests must stay distinct.");
 
     Project project;
     project.bars = 1;
@@ -142,18 +143,18 @@ int main() {
     report = run(badPeriod);
     check(report.error == RenderError::unsupportedPeriod && !badPeriod.started, "A refused period must be visible.");
 
-    std::vector<RenderEndpointInfo> inventory{{L"B", L"Speakers"}, {L"A", L"Speakers"}};
-    sortRenderEndpoints(inventory);
+    std::vector<AudioEndpointInfo> inventory{{L"B", L"Speakers"}, {L"A", L"Speakers"}};
+    sortAudioEndpoints(inventory);
     check(inventory[0].id == L"A" && inventory[1].id == L"B" &&
-          !findRenderEndpoint(inventory, L"Speakers") && !findRenderEndpoint(inventory, L"b"),
+          !findAudioEndpoint(inventory, L"Speakers") && !findAudioEndpoint(inventory, L"b"),
           "Discovery order and duplicate names must not affect exact endpoint identity.");
-    const RenderEndpointChoice selected = *findRenderEndpoint(inventory, L"B");
+    const AudioEndpointChoice selected = *findAudioEndpoint(inventory, L"B");
     std::wstring systemId = L"A";
     unsigned defaultLookups = 0;
-    const auto resolve = [&](const RenderEndpointChoice& choice) {
-        return routeRenderEndpoint(choice,
-            [&](const auto& id) { return findRenderEndpoint(inventory, id); },
-            [&] { ++defaultLookups; return findRenderEndpoint(inventory, systemId); });
+    const auto resolve = [&](const AudioEndpointChoice& choice) {
+        return routeAudioEndpoint(choice,
+            [&](const auto& id) { return findAudioEndpoint(inventory, id); },
+            [&] { ++defaultLookups; return findAudioEndpoint(inventory, systemId); });
     };
     check(resolve({})->id == L"A", "Default choice follows the Windows default.");
     systemId = L"B";
