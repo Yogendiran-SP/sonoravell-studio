@@ -150,6 +150,18 @@ void checkLifecycleAndFormats() {
 }
 
 void checkClockAndFailures() {
+    RecordingFixture initialFlag;
+    initialFlag.device.packets = {pcm(0), pcm(2, 30000417)};
+    initialFlag.device.packets.front().discontinuity = true;
+    const auto initial = initialFlag.run(4);
+    check(initial.end == CaptureEnd::limit && initial.initialDiscontinuityFlag && !initialFlag.device.rejected &&
+          initialFlag.sink.take() == Samples{200, -200, 200, -200}, "Stream-start flag at frame zero lost valid audio.");
+    RecordingFixture flaggedGap;
+    flaggedGap.device.packets = {pcm(1)};
+    flaggedGap.device.packets.front().discontinuity = true;
+    check(flaggedGap.run().error == CaptureError::discontinuity && flaggedGap.sink.take().empty(),
+          "A flag after frame zero hid a recording gap.");
+
     RecordingFixture clock;
     std::array<std::int16_t, 480> mono{};
     const auto bytes = std::as_bytes(std::span(mono));

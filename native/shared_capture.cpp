@@ -104,9 +104,11 @@ CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& 
             if (!packet.frames) break;
             const auto mono = std::span(scratch).first(std::min({packet.frames, limit - report.acceptedFrames,
                                                                  static_cast<unsigned>(scratch.size())}));
+            // The first packet at stream frame zero has no preceding packet.
+            const bool initialFlag = packet.discontinuity && !nextFrame && packet.deviceFrame == 0;
             CaptureError error = CaptureError::none;
             if (packet.frames > report.bufferFrames) error = CaptureError::invalidPacket;
-            else if (packet.discontinuity) error = CaptureError::discontinuity;
+            else if (packet.discontinuity && !initialFlag) error = CaptureError::discontinuity;
             else if (!packet.deviceFrame || *packet.deviceFrame > std::numeric_limits<std::uint64_t>::max() - packet.frames) {
                 error = CaptureError::missingPosition;
             } else if (nextFrame && *packet.deviceFrame != *nextFrame) error = CaptureError::discontinuity;
@@ -126,6 +128,7 @@ CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& 
                 break;
             }
             nextFrame = *packet.deviceFrame + packet.frames;
+            if (initialFlag) report.initialDiscontinuityFlag = true;
             report.acceptedFrames += static_cast<unsigned>(mono.size());
             if (packet.silent) report.silentFrames += static_cast<unsigned>(mono.size());
             report.timing.lastDeviceFrame = packet.deviceFrame;

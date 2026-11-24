@@ -38,6 +38,7 @@ struct CaptureStreamReport {
     CaptureEncoding encoding = CaptureEncoding::unsupported;
     unsigned rate = 0, channels = 0, bufferFrames = 0, requestedPeriodFrames = 0, selectedPeriodFrames = 0;
     unsigned acceptedFrames = 0, silentFrames = 0;
+    bool initialDiscontinuityFlag = false;
     CaptureTiming timing;
 };
 

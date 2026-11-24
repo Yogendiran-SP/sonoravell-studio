@@ -46,7 +46,7 @@ take formats are compatible in both cases.
 | Condition | Result |
 | --- | --- |
 | WASAPI silent flag | Queue the reported frames as zeros with their original frame positions. |
-| Discontinuity flag, gap or overlapping device position | Reject the packet and stop at the prior verified prefix. |
+| Discontinuity flag, gap or overlapping device position | Reject the packet and stop at the prior verified prefix. A flag on the first packet at frame zero is recorded as a stream-start event because that packet has no predecessor. |
 | Missing device frame position | Reject the packet and report the missing position. |
 | Missing, error-flagged or non-increasing QPC timestamp | Count the unreliable timestamp and exclude it from timing estimates. Contiguous device frames can still be accepted. |
 | Invalidation or failed buffer release | Stop; preserve the prior queued prefix. |

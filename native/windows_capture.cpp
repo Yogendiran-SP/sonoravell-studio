@@ -137,6 +137,7 @@ bool saveCaptureDiagnostics(const std::filesystem::path& journal, const WasapiIn
                << "Queued frames: " << stream.acceptedFrames << '\n'
                << "Verified journal frames: " << verifiedFrames << '\n'
                << "Genuine silent frames: " << stream.silentFrames << '\n'
+               << "First packet flagged at frame zero: " << (stream.initialDiscontinuityFlag ? "Yes" : "No") << '\n'
                << "Unreliable timestamps: " << stream.timing.unreliableTimestamps << '\n';
         if (stream.timing.firstDeviceFrame) output << "First device frame: " << *stream.timing.firstDeviceFrame << '\n';
         if (stream.timing.lastDeviceFrame) output << "Last packet device frame: " << *stream.timing.lastDeviceFrame << '\n';

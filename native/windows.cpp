@@ -796,6 +796,7 @@ void showCaptureReport(HWND window) {
         L"\nQueued frames: " + std::to_wstring(stream.acceptedFrames) +
         L"\nVerified journal frames: " + std::to_wstring(result.verifiedFrames) +
         L"\nSilent frames: " + std::to_wstring(stream.silentFrames) +
+        L"\nFirst packet flagged at frame zero: " + (stream.initialDiscontinuityFlag ? L"Yes" : L"No") +
         L"\nUnreliable timestamps: " + std::to_wstring(stream.timing.unreliableTimestamps) +
         L"\nFirst correlated frame / QPC (100 ns): " + stamp(stream.timing.first) +
         L"\nLast correlated frame / QPC (100 ns): " + stamp(stream.timing.last) +
