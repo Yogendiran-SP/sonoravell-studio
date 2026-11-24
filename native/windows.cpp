@@ -37,7 +37,7 @@ enum ControlId {
     pitchLabelId, pitchId, noteId, moveId, removeId, browserId, importId, addTrackId, assetListId, placeId,
     lengthLabelId, lengthId, noteListId, updateNoteId, deleteNoteId, queryId, queryFocusId,
     toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId, deviceId, selectInputId, selectOutputId,
-    selectWaveOutId, selectWasapiId, selectPeriodId, renderReportId,
+    selectWaveOutId, selectWasapiId, selectWasapiOutputId, selectPeriodId, renderReportId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
@@ -47,7 +47,7 @@ Output audio;
 Capture capture;
 EndpointChoice inputChoice, outputChoice;
 bool useWasapi = false;
-SharedRenderConfig wasapiConfig;
+WasapiOutputConfig wasapiConfig;
 constexpr std::array periodChoices{0u, 256u, 512u, 1024u};
 std::function<void()> undo;
 bool dirty = false;
@@ -542,6 +542,12 @@ void showCommands(HWND window) {
     DestroyMenu(menu);
 }
 
+std::wstring menuLabel(std::wstring name) {
+    // Win32 menus treat ampersand as an accelerator marker.
+    for (std::size_t at = 0; (at = name.find(L'&', at)) != name.npos; at += 2) name.insert(at, 1, L'&');
+    return name;
+}
+
 void chooseAudioDevice(HWND window, AudioDirection direction) {
     const auto devices = listWindowsAudioEndpoints(direction);
     auto& choice = direction == AudioDirection::input ? inputChoice : outputChoice;
@@ -550,9 +556,7 @@ void chooseAudioDevice(HWND window, AudioDirection direction) {
     AppendMenuW(menu, MF_STRING | (!choice ? MF_CHECKED : 0), 1, L"Windows default");
     for (std::size_t index = 0; index < devices.size(); ++index) {
         const auto& device = devices[index];
-        auto label = device.name;
-        // Win32 menus treat ampersand as an accelerator marker.
-        for (std::size_t at = 0; (at = label.find(L'&', at)) != label.npos; at += 2) label.insert(at, 1, L'&');
+        const auto label = menuLabel(device.name);
         const auto ambiguous = std::ranges::count(devices, device) > 1;
         AppendMenuW(menu, MF_STRING | (ambiguous ? MF_GRAYED : 0) | (choice == device ? MF_CHECKED : 0),
                     index + 2, label.c_str());
@@ -578,8 +582,8 @@ const wchar_t* renderErrorText(RenderError error) {
     case RenderError::none: return L"None";
     case RenderError::unsupportedFormat: return L"Unsupported client format. Try System period or WinMM.";
     case RenderError::unsupportedPeriod: return L"Unsupported or locked engine period. Try System period or WinMM.";
-    case RenderError::deviceUnavailable: return L"Default endpoint unavailable. Check Windows sound settings and retry.";
-    case RenderError::deviceInvalidated: return L"Device became unavailable. Reconnect or select an output in Windows, then retry Play.";
+    case RenderError::deviceUnavailable: return L"Output unavailable. Reconnect it or choose another WASAPI output in Devices.";
+    case RenderError::deviceInvalidated: return L"Device became unavailable. Reconnect it or choose another output, then press Play.";
     case RenderError::timeout: return L"Timed out waiting for audio buffer events.";
     case RenderError::invalidBuffer: return L"Endpoint reported invalid buffer data.";
     case RenderError::driver: return L"Windows audio driver or service error.";
@@ -610,13 +614,19 @@ void showRenderReport(HWND window) {
         status(window, L"Run a WASAPI playback attempt to collect diagnostics.");
         return;
     }
-    const auto& report = *result;
+    const auto& report = result->stream;
+    const auto target = result->requested ? L"Explicit: " + result->requested->name : L"Windows default";
+    const auto output = result->resolved.name.empty() ? L"Unresolved" : result->resolved.name;
+    const auto& endpointId = !result->resolved.id.empty() ? result->resolved.id :
+                             (result->requested ? result->requested->id : result->resolved.id);
     const auto outcome = report.end == RenderEnd::completed ? L"Completed" :
                          report.end == RenderEnd::cancelled ? L"Stopped" : L"Failed";
     wchar_t nativeCode[16]{};
     swprintf_s(nativeCode, std::size(nativeCode), L"0x%08X", report.nativeError);
     const auto message = std::wstring(outcome) + L" • " + renderStageText(report.stage) +
         L"\n" + renderErrorText(report.error) + L"\nNative status " + nativeCode +
+        L"\n\nRequested output: " + target + L"\nResolved output: " + output +
+        L"\nEndpoint ID: " + (endpointId.empty() ? L"Unavailable" : endpointId) +
         L"\n\nClient format: 48000 Hz, 2 channels, 16-bit PCM" +
         L"\nWindows mix: " + std::to_wstring(report.mixRate) + L" Hz / " + std::to_wstring(report.mixChannels) +
         L" channels\nWindows conversion requested: " + (report.conversionEnabled ? L"Yes" : L"No") +
@@ -644,21 +654,65 @@ void chooseWasapiPeriod(HWND window) {
     for (std::size_t i = 0; i < periodChoices.size(); ++i) {
         const auto frames = periodChoices[i];
         const auto title = frames ? std::to_wstring(frames) + L" frames (request)" : L"System period";
-        AppendMenuW(menu, MF_STRING | (frames == wasapiConfig.requestedFrames ? MF_CHECKED : 0), i + 1, title.c_str());
+        AppendMenuW(menu, MF_STRING | (frames == wasapiConfig.stream.requestedFrames ? MF_CHECKED : 0), i + 1, title.c_str());
     }
     const auto selected = popupDeviceMenu(window, menu);
     if (!selected || capture.active()) return;
     audio.stop();
-    wasapiConfig.requestedFrames = periodChoices.at(selected - 1);
+    wasapiConfig.stream.requestedFrames = periodChoices.at(selected - 1);
     InvalidateRect(window, nullptr, FALSE);
     status(window, L"WASAPI buffer preference updated for the next Play.");
+}
+
+void setWasapiOutput(HWND window, RenderEndpointChoice next) {
+    const auto& current = wasapiConfig.output;
+    const bool changed = current.has_value() != next.has_value() ||
+                         (current && next && current->id != next->id);
+    if (changed) audio.stop();
+    wasapiConfig.output = std::move(next);
+    InvalidateRect(window, nullptr, FALSE);
+    status(window, changed ? L"WASAPI output selected. Press Play to use it."
+                           : L"WASAPI output already selected.");
+}
+
+void chooseWasapiOutput(HWND window) {
+    std::vector<RenderEndpointInfo> endpoints;
+    bool discoveryFailed = false;
+    try {
+        endpoints = listWasapiRenderEndpoints();
+    } catch (const std::runtime_error& error) {
+        discoveryFailed = true;
+        status(window, wide(error.what()).c_str());
+    }
+    const auto menu = CreatePopupMenu();
+    if (!menu) return;
+    const auto& choice = wasapiConfig.output;
+    AppendMenuW(menu, MF_STRING | (!choice ? MF_CHECKED : 0), 1, L"Windows default");
+    if (discoveryFailed) AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Output discovery unavailable");
+    else if (choice && !findRenderEndpoint(endpoints, choice->id)) {
+        const auto label = menuLabel(L"Unavailable: " + choice->name);
+        AppendMenuW(menu, MF_STRING | MF_CHECKED | MF_GRAYED, 0, label.c_str());
+    }
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+        const auto& endpoint = endpoints[i];
+        auto label = endpoint.name;
+        if (std::ranges::count(endpoints, endpoint.name, &RenderEndpointInfo::name) > 1) {
+            label += L" (" + std::to_wstring(i + 1) + L")";
+        }
+        const auto flags = MF_STRING | (choice && choice->id == endpoint.id ? MF_CHECKED : 0);
+        AppendMenuW(menu, flags, i + 2, menuLabel(std::move(label)).c_str());
+    }
+    const auto selected = popupDeviceMenu(window, menu);
+    if (!selected || capture.active()) return;
+    if (selected == 1) setWasapiOutput(window, {});
+    else setWasapiOutput(window, std::move(endpoints.at(selected - 2)));
 }
 
 void setPlaybackBackend(HWND window, bool wasapi) {
     audio.stop();
     useWasapi = wasapi;
     InvalidateRect(window, nullptr, FALSE);
-    status(window, useWasapi ? L"WASAPI shared playback selected. Uses the Windows default output."
+    status(window, useWasapi ? L"WASAPI shared playback selected. Choose the output in Devices."
                              : L"WinMM playback selected.");
 }
 
@@ -667,11 +721,14 @@ void showAudioDevices(HWND window) {
     if (!menu) return;
     const std::wstring input = L"Choose input  (" + (inputChoice ? inputChoice->name : L"Windows default") + L")";
     const std::wstring output = L"Choose WinMM output  (" + (outputChoice ? outputChoice->name : L"Windows default") + L")";
-    AppendMenuW(menu, MF_STRING, selectInputId, input.c_str());
-    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_GRAYED : 0), selectOutputId, output.c_str());
+    const auto wasapiOutput = menuLabel(L"Choose WASAPI output  (" +
+        (wasapiConfig.output ? wasapiConfig.output->name : L"Windows default") + L")");
+    AppendMenuW(menu, MF_STRING, selectInputId, menuLabel(input).c_str());
+    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_GRAYED : 0), selectOutputId, menuLabel(output).c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_CHECKED : 0), selectWaveOutId, L"Playback: WinMM");
-    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_CHECKED : 0), selectWasapiId, L"Playback: WASAPI shared (Windows default output)");
+    AppendMenuW(menu, MF_STRING | (useWasapi ? MF_CHECKED : 0), selectWasapiId, L"Playback: WASAPI shared");
+    AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_GRAYED : 0), selectWasapiOutputId, wasapiOutput.c_str());
     AppendMenuW(menu, MF_STRING | (!useWasapi ? MF_GRAYED : 0), selectPeriodId, L"WASAPI buffer period...");
     AppendMenuW(menu, MF_STRING, renderReportId, L"Last WASAPI playback diagnostics...");
     const auto selected = popupDeviceMenu(window, menu);
@@ -679,6 +736,7 @@ void showAudioDevices(HWND window) {
     switch (selected) {
     case selectInputId: chooseAudioDevice(window, AudioDirection::input); break;
     case selectOutputId: chooseAudioDevice(window, AudioDirection::output); break;
+    case selectWasapiOutputId: chooseWasapiOutput(window); break;
     case selectPeriodId: chooseWasapiPeriod(window); break;
     case renderReportId: showRenderReport(window); break;
     case selectWaveOutId:
@@ -977,7 +1035,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 audio.stop();
                 if (state == Output::State::completed) status(window, L"Playback complete.");
                 else if (const auto& report = audio.lastWasapiRun(); audio.lastPlaybackUsedWasapi() && report) {
-                    status(window, renderErrorText(report->error));
+                    status(window, renderErrorText(report->stream.error));
                 } else status(window, L"Windows audio output failed.");
             }
             if (state != Output::State::stopped) {
@@ -1036,11 +1094,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
             // A stale explicit selection must not silently open the default input.
         }
         const auto savedProject = project;
-        if (useWasapi || wasapiConfig.requestedFrames) return 1;
+        if (useWasapi || wasapiConfig.stream.requestedFrames || wasapiConfig.output) return 1;
         setPlaybackBackend(window, true);
-        if (!useWasapi || project != savedProject || audio.state() != Output::State::stopped) return 1;
+        setWasapiOutput(window, RenderEndpointInfo{L"{ci-output}", L"Fixture output"});
+        if (!useWasapi || project != savedProject || audio.state() != Output::State::stopped ||
+            !wasapiConfig.output || wasapiConfig.output->id != L"{ci-output}") return 1;
         setPlaybackBackend(window, false);
-        if (useWasapi || project != savedProject) return 1;
+        if (useWasapi || project != savedProject || !wasapiConfig.output) return 1;
+        setWasapiOutput(window, {});
+        if (wasapiConfig.output || project != savedProject) return 1;
         execute(window, newId);
         execute(window, addTrackId);
         SetDlgItemInt(window, beatId, 2, FALSE);

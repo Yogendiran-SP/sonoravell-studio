@@ -1,4 +1,5 @@
 #include "shared_render.hpp"
+#include "render_endpoints.hpp"
 
 #include <algorithm>
 #include <array>
@@ -141,18 +142,46 @@ int main() {
     report = run(badPeriod);
     check(report.error == RenderError::unsupportedPeriod && !badPeriod.started, "A refused period must be visible.");
 
-    Device openFailure;
-    openFailure.openResult = RenderError::deviceUnavailable;
-    report = run(openFailure);
-    check(report.error == RenderError::deviceUnavailable && !openFailure.started,
-          "A missing endpoint must not route audio elsewhere.");
-
+    std::vector<RenderEndpointInfo> inventory{{L"B", L"Speakers"}, {L"A", L"Speakers"}};
+    sortRenderEndpoints(inventory);
+    check(inventory[0].id == L"A" && inventory[1].id == L"B" &&
+          !findRenderEndpoint(inventory, L"Speakers") && !findRenderEndpoint(inventory, L"b"),
+          "Discovery order and duplicate names must not affect exact endpoint identity.");
+    const RenderEndpointChoice selected = *findRenderEndpoint(inventory, L"B");
+    std::wstring systemId = L"A";
+    unsigned defaultLookups = 0;
+    const auto resolve = [&](const RenderEndpointChoice& choice) {
+        return routeRenderEndpoint(choice,
+            [&](const auto& id) { return findRenderEndpoint(inventory, id); },
+            [&] { ++defaultLookups; return findRenderEndpoint(inventory, systemId); });
+    };
+    check(resolve({})->id == L"A", "Default choice follows the Windows default.");
+    systemId = L"B";
+    check(resolve({})->id == L"B", "Default must be resolved again on a new Play.");
+    systemId = L"A";
+    std::ranges::reverse(inventory);
+    const auto runSelected = [&](Device& endpoint) {
+        if (!resolve(selected)) endpoint.openResult = RenderError::deviceUnavailable;
+        return run(endpoint);
+    };
     Device invalidated;
     invalidated.paddingResult = RenderError::deviceInvalidated;
-    report = run(invalidated);
+    report = runSelected(invalidated);
     check(report.end == RenderEnd::failed && report.stage == RenderStage::stream &&
           report.deviceInvalidations == 1 && report.nativeError == invalidated.nativeError() &&
           invalidated.stopped == 1 && invalidated.frames == 4, "An invalidated device must stop without an automatic replay.");
+
+    inventory.erase(inventory.begin());
+    Device openFailure;
+    report = runSelected(openFailure);
+    check(report.error == RenderError::deviceUnavailable && !openFailure.started && defaultLookups == 2,
+          "Retrying an absent explicit output must stop without contacting the default.");
+    inventory.clear();
+    check(!resolve({}), "An empty device inventory must report a missing default.");
+    inventory.push_back({L"B", L"Renamed speakers"});
+    const auto* restored = resolve(selected);
+    check(restored && restored->name == L"Renamed speakers" && defaultLookups == 3,
+          "A returning endpoint must match its ID despite a new display name.");
 
     Device badStart;
     badStart.startResult = RenderError::driver;
@@ -205,7 +234,7 @@ int main() {
     check(report.end == RenderEnd::cancelled && !neverOpened.opened, "Cancellation before setup opened a device.");
 
     Device reopened;
-    report = run(reopened);
+    report = runSelected(reopened);
     check(report.end == RenderEnd::completed && reopened.stopped == 1 && reopened.frames == 9,
           "An explicit retry must succeed on a fresh endpoint.");
 }

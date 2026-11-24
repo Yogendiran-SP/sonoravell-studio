@@ -103,7 +103,7 @@ public:
     unsigned framesPlayed() const { return played.load(); }
 
     // The UI reads this only after the worker has been joined.
-    const std::optional<SharedRenderReport>& lastWasapiRun() const { return wasapiRun; }
+    const std::optional<WasapiOutputReport>& lastWasapiRun() const { return wasapiRun; }
     bool lastPlaybackUsedWasapi() const { return lastUsedWasapi; }
 
     void stop() {
@@ -123,17 +123,17 @@ public:
     }
 
     void play(const SessionAudio& session, unsigned startFrame, unsigned deviceId,
-              std::optional<SharedRenderConfig> wasapi = {}) {
+              std::optional<WasapiOutputConfig> wasapi = {}) {
         stop();
         lastUsedWasapi = wasapi.has_value();
         played.store(0);
         playbackState.store(State::playing);
         try {
-            worker = std::jthread([this, &session, startFrame, deviceId, wasapi](std::stop_token stopToken) {
+            worker = std::jthread([this, &session, startFrame, deviceId, wasapi = std::move(wasapi)](std::stop_token stopToken) mutable {
                 PlaybackMixer mixer(session, decodeMuteMask(muteMask.load()), startFrame);
                 if (wasapi) {
-                    wasapiRun = runWasapiOutput(mixer, *wasapi, muteMask, played, stopToken);
-                    playbackState.store(wasapiRun->end == RenderEnd::failed ? State::failed : State::completed);
+                    wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), muteMask, played, stopToken);
+                    playbackState.store(wasapiRun->stream.end == RenderEnd::failed ? State::failed : State::completed);
                     return;
                 }
                 bool ok;
@@ -154,7 +154,7 @@ private:
     std::atomic<unsigned> played{0};
     std::atomic<State> playbackState{State::stopped};
     bool lastUsedWasapi = false;
-    std::optional<SharedRenderReport> wasapiRun;
+    std::optional<WasapiOutputReport> wasapiRun;
     std::jthread worker;
 };
 
