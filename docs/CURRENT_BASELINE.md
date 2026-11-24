@@ -1,6 +1,6 @@
 # Current native-development baseline
 
-Audit date: 2026-11-23. Audited main at `e01a77de58fcde3c872a24cbf296d0f98833eaf5` (merged PR #7). Recording durability and Session autosave merged in [PR #8](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8) and [PR #9](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9).
+Audit date: 2026-11-24. Audited main at `5d331658c64aec946ee93af28fa5d62878f41a49`. This includes [PR #8](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8) for take recovery, [PR #9](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9) for Session checkpoints and [PR #10](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10) for WinMM device selection. See the [WASAPI preview](WASAPI_PREVIEW.md) for the next increment and acceptance evidence.
 
 ## Implemented in repository source
 
@@ -11,6 +11,7 @@ Audit date: 2026-11-23. Audited main at `e01a77de58fcde3c872a24cbf296d0f98833eaf
 - Single mono recording from the selected Windows input, finalized on Stop. The recording worker writes recoverable blocks to a local take journal. **Recover take…** restores the verified prefix when input or storage is interrupted.
 - Local Session autosave rotates two staged checkpoints per working Session. Restore opens a copy with its embedded audio.
 - Edit MIDI note pitch/beat/duration, delete, undo last edit, click ruler to locate playback, focus/Inspector/Browser/Mixer workspace toggles and command search.
+- Opt-in WASAPI shared-mode render for the default Windows endpoint, with period requests and render diagnostics. WinMM remains the launch default.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
@@ -29,7 +30,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 ## Immediate risk-driven priority order
 
 1. **Recovery validation:** verify the [take journal](RECORDING_RECOVERY.md) with real Windows input and stress the autosave path on larger Sessions. The portable storage tests cover interrupted writes and independent checkpoints.
-2. **Device abstraction and real-time telemetry:** the [backend decision](AUDIO_BACKEND_DECISION.md) records the initial WinMM endpoint boundary. Prototype event-driven WASAPI with negotiated format, capture/render diagnostics and a physical baseline.
+2. **Device abstraction and real-time telemetry:** the [backend decision](AUDIO_BACKEND_DECISION.md) records the initial WinMM endpoint boundary. Validate the opt-in WASAPI playback preview on hardware, then evaluate named render endpoints and a separate capture adapter with real capture discontinuity flags.
 3. **Project persistence and regression:** comprehensive session schema migration tests, undo/redo history, autosaves, reload of large sessions, failed-save atomicity, and clip relinking when external assets arrive.
 4. **Recording/editing vertical slice:** selectable input/output, simultaneous playback + capture, basic clip trim/move/split, track arming and MIDI device input.
 5. **Release gates:** G0 verified hardware callback evidence, G1 recoverable sessions/recordings, G2 usable offline production workflow before any cloud/live dependence.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "session.hpp"
+#include "windows_wasapi.hpp"
 
 #include <windows.h>
 #include <mmsystem.h>
@@ -87,17 +87,9 @@ public:
         return true;
     }
 
-    static TrackMutes decodeMutes(unsigned mask) {
-        TrackMutes muted{};
-        for (std::size_t track = 0; track < muted.size(); ++track) {
-            muted[track] = (mask & (1u << track)) != 0;
-        }
-        return muted;
-    }
-
 private:
     bool queue(Buffer& buffer, PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask) {
-        const auto count = mixer.read(buffer.samples, decodeMutes(muteMask.load()));
+        const auto count = mixer.read(buffer.samples, decodeMuteMask(muteMask.load()));
         buffer.header.dwBufferLength = static_cast<DWORD>(count * sizeof(buffer.samples.front()));
         return waveOutWrite(device, &buffer.header, sizeof(buffer.header)) == MMSYSERR_NOERROR;
     }
@@ -109,6 +101,10 @@ public:
 
     State state() const { return playbackState.load(); }
     unsigned framesPlayed() const { return played.load(); }
+
+    // The UI reads this only after the worker has been joined.
+    const std::optional<SharedRenderReport>& lastWasapiRun() const { return wasapiRun; }
+    bool lastPlaybackUsedWasapi() const { return lastUsedWasapi; }
 
     void stop() {
         if (worker.joinable()) {
@@ -126,13 +122,20 @@ public:
         muteMask.store(mask);
     }
 
-    void play(const SessionAudio& session, unsigned startFrame, unsigned deviceId) {
+    void play(const SessionAudio& session, unsigned startFrame, unsigned deviceId,
+              std::optional<SharedRenderConfig> wasapi = {}) {
         stop();
+        lastUsedWasapi = wasapi.has_value();
         played.store(0);
         playbackState.store(State::playing);
         try {
-            worker = std::jthread([this, &session, startFrame, deviceId](std::stop_token stopToken) {
-                PlaybackMixer mixer(session, WaveStream::decodeMutes(muteMask.load()), startFrame);
+            worker = std::jthread([this, &session, startFrame, deviceId, wasapi](std::stop_token stopToken) {
+                PlaybackMixer mixer(session, decodeMuteMask(muteMask.load()), startFrame);
+                if (wasapi) {
+                    wasapiRun = runWasapiOutput(mixer, *wasapi, muteMask, played, stopToken);
+                    playbackState.store(wasapiRun->end == RenderEnd::failed ? State::failed : State::completed);
+                    return;
+                }
                 bool ok;
                 {
                     WaveStream stream;
@@ -150,6 +153,8 @@ private:
     std::atomic<unsigned> muteMask{0};
     std::atomic<unsigned> played{0};
     std::atomic<State> playbackState{State::stopped};
+    bool lastUsedWasapi = false;
+    std::optional<SharedRenderReport> wasapiRun;
     std::jthread worker;
 };
 

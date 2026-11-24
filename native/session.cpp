@@ -145,6 +145,10 @@ bool PlaybackMixer::finished() const noexcept {
     return position == audio.sampleCount;
 }
 
+unsigned PlaybackMixer::remainingFrames() const noexcept {
+    return static_cast<unsigned>((audio.sampleCount - position) / channelCount);
+}
+
 void writeWave(std::ostream& output, const Samples& samples) {
     if (samples.size() > (UINT32_MAX - 36) / 2 || samples.size() % channelCount != 0) {
         throw std::invalid_argument("Invalid stereo PCM size");
