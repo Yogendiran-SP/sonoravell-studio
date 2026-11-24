@@ -624,6 +624,21 @@ const wchar_t* renderStageText(RenderStage stage) {
     return L"Unknown";
 }
 
+std::wstring clockDiagnostics(const StreamClock& clock) {
+    if (!clock.unitsPerSecond()) return L"\n\nStream clock: unavailable";
+    const auto stamp = [](const std::optional<ClockStamp>& sample) -> std::wstring {
+        if (!sample) return L"Unavailable";
+        return std::to_wstring(sample->position.units) + L" / " + std::to_wstring(sample->qpc.ticks100ns);
+    };
+    const auto rejected = clock.rejected();
+    return L"\n\nStream clock units/second: " + std::to_wstring(clock.unitsPerSecond()) +
+        L"\nFirst position / QPC (100 ns): " + stamp(clock.first()) +
+        L"\nLast position / QPC (100 ns): " + stamp(clock.last()) +
+        L"\nMissing / stale / nonmonotonic samples: " + std::to_wstring(rejected.missing) +
+        L" / " + std::to_wstring(rejected.stale) + L" / " + std::to_wstring(rejected.nonmonotonic) +
+        L"\nClock reset detected: " + (rejected.reset ? L"Yes" : L"No");
+}
+
 void showRenderReport(HWND window) {
     if (audio.state() == Output::State::playing) {
         status(window, L"Stop playback to view its diagnostic report.");
@@ -657,7 +672,7 @@ void showRenderReport(HWND window) {
         L"\nSubmitted: " + std::to_wstring(report.submittedFrames) + L" frames" +
         L"\n\nEmpty render-buffer events (suspected underruns): " + std::to_wstring(report.emptyBufferEvents) +
         L"\nWait timeouts: " + std::to_wstring(report.waitTimeouts) +
-        L"\nDevice invalidations: " + std::to_wstring(report.deviceInvalidations);
+        L"\nDevice invalidations: " + std::to_wstring(report.deviceInvalidations) + clockDiagnostics(result->clock);
     MessageBoxW(window, message.c_str(), L"WASAPI playback diagnostics", MB_OK | MB_ICONINFORMATION);
 }
 
@@ -781,9 +796,6 @@ void showCaptureReport(HWND window) {
                           stream.encoding == CaptureEncoding::pcm16 ? L"PCM16" : L"unsupported";
     wchar_t nativeCode[16]{};
     swprintf_s(nativeCode, std::size(nativeCode), L"0x%08X", stream.nativeError);
-    const auto stamp = [](const std::optional<CaptureStamp>& value) {
-        return value ? std::to_wstring(value->deviceFrame) + L" / " + std::to_wstring(value->qpc100ns) : L"Unavailable";
-    };
     const auto message = std::wstring(outcome) + L"\nStage: " + wide(captureStageText(stream.stage)) +
         L"\nStream error: " + wide(captureErrorText(stream.error)) + L"\nNative status: " + nativeCode +
         L"\nStorage write failed: " + (result.storageFailed ? L"Yes" : L"No") +
@@ -797,10 +809,8 @@ void showCaptureReport(HWND window) {
         L"\nVerified journal frames: " + std::to_wstring(result.verifiedFrames) +
         L"\nSilent frames: " + std::to_wstring(stream.silentFrames) +
         L"\nFirst packet flagged at frame zero: " + (stream.initialDiscontinuityFlag ? L"Yes" : L"No") +
-        L"\nUnreliable timestamps: " + std::to_wstring(stream.timing.unreliableTimestamps) +
-        L"\nFirst correlated frame / QPC (100 ns): " + stamp(stream.timing.first) +
-        L"\nLast correlated frame / QPC (100 ns): " + stamp(stream.timing.last) +
-        L"\nCompanion diagnostics file saved: " + (result.saved ? L"Yes" : L"No");
+        L"\nCompanion diagnostics file saved: " + (result.saved ? L"Yes" : L"No") +
+        clockDiagnostics(stream.timing.clock);
     MessageBoxW(window, message.c_str(), L"WASAPI capture diagnostics", MB_OK | MB_ICONINFORMATION);
 }
 

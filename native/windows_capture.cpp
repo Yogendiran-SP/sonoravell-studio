@@ -119,6 +119,8 @@ bool saveCaptureDiagnostics(const std::filesystem::path& journal, const WasapiIn
         std::ofstream output(path);
         if (!output) return false;
         const auto& stream = report.stream;
+        const auto& clock = stream.timing.clock;
+        const auto rejected = clock.rejected();
         output << "WASAPI shared capture\n"
                << "Requested input: " << (report.requested ? utf8(report.requested->name) : "Windows default") << '\n'
                << "Requested endpoint ID: " << (report.requested ? utf8(report.requested->id) : "Default") << '\n'
@@ -138,13 +140,15 @@ bool saveCaptureDiagnostics(const std::filesystem::path& journal, const WasapiIn
                << "Verified journal frames: " << verifiedFrames << '\n'
                << "Genuine silent frames: " << stream.silentFrames << '\n'
                << "First packet flagged at frame zero: " << (stream.initialDiscontinuityFlag ? "Yes" : "No") << '\n'
-               << "Unreliable timestamps: " << stream.timing.unreliableTimestamps << '\n';
+               << "Missing / stale / nonmonotonic timestamps: " << rejected.missing << ' '
+               << rejected.stale << ' ' << rejected.nonmonotonic << '\n'
+               << "Clock reset detected: " << (rejected.reset ? "Yes" : "No") << '\n';
         if (stream.timing.firstDeviceFrame) output << "First device frame: " << *stream.timing.firstDeviceFrame << '\n';
         if (stream.timing.lastDeviceFrame) output << "Last packet device frame: " << *stream.timing.lastDeviceFrame << '\n';
-        if (stream.timing.first) output << "First correlated frame/QPC (100 ns): "
-                                       << stream.timing.first->deviceFrame << ' ' << stream.timing.first->qpc100ns << '\n';
-        if (stream.timing.last) output << "Last correlated frame/QPC (100 ns): "
-                                      << stream.timing.last->deviceFrame << ' ' << stream.timing.last->qpc100ns << '\n';
+        if (clock.first()) output << "First correlated frame/QPC (100 ns): "
+                                  << clock.first()->position.units << ' ' << clock.first()->qpc.ticks100ns << '\n';
+        if (clock.last()) output << "Last correlated frame/QPC (100 ns): "
+                                 << clock.last()->position.units << ' ' << clock.last()->qpc.ticks100ns << '\n';
         if (const auto drift = stream.timing.driftPpm()) output << "Observed rate error vs 48 kHz (ppm): " << *drift << '\n';
         output.close();
         return static_cast<bool>(output);
