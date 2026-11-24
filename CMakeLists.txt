@@ -3,18 +3,20 @@ project(SonoravellStudio LANGUAGES CXX)
 
 add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
-  native/duplex_transport.cpp)
+  native/duplex_transport.cpp native/loopback_qualification.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
 add_executable(sonoravell-render native/render_cli.cpp)
 target_link_libraries(sonoravell-render PRIVATE sonoravell_engine)
+add_executable(sonoravell-qualify native/qualify_cli.cpp)
+target_link_libraries(sonoravell-qualify PRIVATE sonoravell_engine)
 
 if(WIN32)
   add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_capture.cpp native/windows_devices.cpp
     native/windows_wasapi.cpp native/windows_wasapi_capture.cpp native/windows_wasapi_endpoints.cpp)
   target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32 gdi32 ole32)
-  install(TARGETS SonoravellStudio sonoravell-render RUNTIME DESTINATION .)
+  install(TARGETS SonoravellStudio sonoravell-render sonoravell-qualify RUNTIME DESTINATION .)
   install(FILES README.md LICENSE DESTINATION .)
   install(DIRECTORY docs/ DESTINATION docs FILES_MATCHING PATTERN "*.md")
 endif()
@@ -47,6 +49,12 @@ if(BUILD_TESTING)
   target_link_libraries(duplex_transport_check PRIVATE sonoravell_engine Threads::Threads)
   add_test(NAME duplex_transport_check COMMAND duplex_transport_check)
   set_tests_properties(duplex_transport_check PROPERTIES TIMEOUT 30)
+  add_executable(loopback_qualification_check tests/loopback_qualification_check.cpp)
+  target_link_libraries(loopback_qualification_check PRIVATE sonoravell_engine)
+  add_test(NAME loopback_qualification_check COMMAND loopback_qualification_check)
+  add_test(NAME qualify_cli_check COMMAND ${CMAKE_COMMAND}
+    -DQUALIFY=$<TARGET_FILE:sonoravell-qualify> -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/qualify_cli_check.cmake)
+  set_tests_properties(qualify_cli_check loopback_qualification_check PROPERTIES TIMEOUT 30)
   if(WIN32)
     add_test(NAME workspace_check COMMAND SonoravellStudio --workspace-check)
   endif()

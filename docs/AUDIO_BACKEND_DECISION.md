@@ -57,3 +57,5 @@ loopback measurements. Validate both streams under scheduling and
 storage pressure, with bounded queues, explicit dropout/overrun reporting,
 and recovery of the last checksummed audio prefix if either endpoint fails.
 Monitoring, rate correction and synchronized operation depend on that evidence.
+Use the [offline reference and hardware qualification protocol](HARDWARE_QUALIFICATION.md)
+for measured returned-signal evidence and configuration-specific acceptance.

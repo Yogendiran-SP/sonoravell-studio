@@ -67,7 +67,7 @@ std::uint32_t sessionFrames(const Project& project);
 const AudioAsset& findAsset(const Project& project, std::uint32_t id);
 void validateProject(const Project& project);
 std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick);
-AudioAsset readWave(std::istream& input, std::uint32_t id, std::string name);
+AudioAsset readWave(std::istream& input, std::uint32_t id, std::string name, bool requireSessionRate = false);
 Project openProject(const std::filesystem::path& path);
 void saveProject(const std::filesystem::path& path, const Project& project);
 }

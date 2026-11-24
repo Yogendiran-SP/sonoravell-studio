@@ -1,0 +1,21 @@
+string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef suffix)
+set(reference "${CMAKE_CURRENT_BINARY_DIR}/qualification-${suffix}")
+execute_process(COMMAND "${QUALIFY}" generate "${reference}" RESULT_VARIABLE generated)
+if(NOT generated EQUAL 0 OR NOT EXISTS "${reference}/reference.sonora")
+  message(FATAL_ERROR "Reference generation failed")
+endif()
+execute_process(COMMAND "${QUALIFY}" analyze "${reference}/reference.wav" --json
+                RESULT_VARIABLE analyzed OUTPUT_VARIABLE json)
+execute_process(COMMAND "${QUALIFY}" analyze "${reference}/reference.wav"
+                RESULT_VARIABLE printed OUTPUT_VARIABLE report)
+file(REMOVE_RECURSE "${reference}")
+if(NOT analyzed EQUAL 0 OR NOT printed EQUAL 0)
+  message(FATAL_ERROR "Qualification command failed to analyze its reference")
+endif()
+string(JSON marker_count LENGTH "${json}" markers)
+string(JSON displacement GET "${json}" signal_timing median_displacement_ms)
+string(JSON round_trip TYPE "${json}" calibrated_round_trip_ms)
+if(NOT marker_count EQUAL 8 OR NOT displacement EQUAL 0 OR NOT round_trip STREQUAL "NULL" OR
+   NOT report MATCHES "Median returned displacement")
+  message(FATAL_ERROR "Qualification reports did not preserve the reference alignment and unmeasured round trip")
+endif()

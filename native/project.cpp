@@ -330,7 +330,7 @@ void saveProject(const std::filesystem::path& path, const Project& project) {
     commitSave(temporary, destination);
 }
 
-AudioAsset readWave(std::istream& file, std::uint32_t id, std::string name) {
+AudioAsset readWave(std::istream& file, std::uint32_t id, std::string name, bool requireSessionRate) {
     validateName(name);
     require(readTag<4>(file) == std::array{'R', 'I', 'F', 'F'}, "Select a PCM WAV file.");
     const auto riffSize = readNumber(file);
@@ -354,6 +354,7 @@ AudioAsset readWave(std::istream& file, std::uint32_t id, std::string name) {
             require((channels == 1 || channels == 2) && (rate == 44100 || rate == sampleRate) &&
                     bits == 16 && alignment == channels * 2 && byteRate == rate * alignment,
                     "Use mono or stereo 16-bit PCM WAV at 44.1 or 48 kHz.");
+            require(!requireSessionRate || rate == sampleRate, "Use an unresampled 48 kHz PCM WAV for timing analysis.");
             file.ignore(static_cast<std::streamsize>(padded - 16));
         } else if (tag == std::array{'d', 'a', 't', 'a'}) {
             require(channels && pcm.empty() && size > 0 && size % (channels * 2) == 0 &&
