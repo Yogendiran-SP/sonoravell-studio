@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
 add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
-  native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp)
+  native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
@@ -39,6 +39,9 @@ if(BUILD_TESTING)
   add_executable(stream_clock_check tests/stream_clock_check.cpp)
   target_link_libraries(stream_clock_check PRIVATE sonoravell_engine)
   add_test(NAME stream_clock_check COMMAND stream_clock_check)
+  add_executable(duplex_coordination_check tests/duplex_coordination_check.cpp)
+  target_link_libraries(duplex_coordination_check PRIVATE sonoravell_engine)
+  add_test(NAME duplex_coordination_check COMMAND duplex_coordination_check)
   if(WIN32)
     add_test(NAME workspace_check COMMAND SonoravellStudio --workspace-check)
   endif()
