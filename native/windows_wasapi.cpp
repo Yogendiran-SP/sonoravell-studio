@@ -3,11 +3,16 @@
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
+#include <initguid.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 
 #include "windows_wasapi.hpp"
 
 #include <memory>
+#include <new>
+#include <stdexcept>
+#include <utility>
 
 namespace sonoravell {
 namespace {
@@ -15,7 +20,7 @@ using Microsoft::WRL::ComPtr;
 
 class ComApartment {
 public:
-    ComApartment() : result(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) {}
+    explicit ComApartment(DWORD model = COINIT_MULTITHREADED) : result(CoInitializeEx(nullptr, model)) {}
     ~ComApartment() { if (SUCCEEDED(result)) CoUninitialize(); }
     const HRESULT result;
 };
@@ -29,18 +34,68 @@ public:
     const HANDLE handle;
 };
 
+HRESULT makeEnumerator(ComPtr<IMMDeviceEnumerator>& enumerator) noexcept {
+    return CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
+                            IID_PPV_ARGS(enumerator.GetAddressOf()));
+}
+
+HRESULT readEndpointId(IMMDevice& device, std::wstring& id) {
+    LPWSTR raw = nullptr;
+    const auto hr = device.GetId(&raw);
+    const auto freeString = [](wchar_t* value) { CoTaskMemFree(value); };
+    const std::unique_ptr<wchar_t, decltype(freeString)> allocated(raw, freeString);
+    if (FAILED(hr)) return hr;
+    if (!raw || !*raw) return E_UNEXPECTED;
+    id = raw;
+    return S_OK;
+}
+
+std::wstring readEndpointName(IMMDevice& device) {
+    ComPtr<IPropertyStore> properties;
+    if (FAILED(device.OpenPropertyStore(STGM_READ, properties.GetAddressOf()))) return L"Unnamed output";
+    struct Property {
+        PROPVARIANT value{};
+        ~Property() { PropVariantClear(&value); }
+    } name;
+    if (FAILED(properties->GetValue(PKEY_Device_FriendlyName, &name.value)) ||
+        name.value.vt != VT_LPWSTR || !name.value.pwszVal || !*name.value.pwszVal) return L"Unnamed output";
+    return name.value.pwszVal;
+}
+
 class WasapiEndpoint final : public SharedRenderEndpoint {
 public:
+    explicit WasapiEndpoint(const RenderEndpointChoice& choice) : choice(choice) {}
+
     RenderError open(SharedRenderConfig config, SharedRenderReport& report) noexcept override {
         if (!bufferReady.handle || !stopReady.handle) return checked(HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY));
         ComPtr<IMMDeviceEnumerator> enumerator;
-        auto hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
-                                   IID_PPV_ARGS(enumerator.GetAddressOf()));
+        auto hr = makeEnumerator(enumerator);
         if (FAILED(hr)) return checked(hr);
 
         ComPtr<IMMDevice> device;
-        hr = enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, device.GetAddressOf());
+        hr = routeRenderEndpoint(choice,
+            [&](const std::wstring& id) { return enumerator->GetDevice(id.c_str(), device.GetAddressOf()); },
+            [&] { return enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, device.GetAddressOf()); });
         if (FAILED(hr)) return checked(hr);
+        DWORD state = 0;
+        hr = device->GetState(&state);
+        if (FAILED(hr)) return checked(hr);
+        if (state != DEVICE_STATE_ACTIVE) return RenderError::deviceUnavailable;
+        ComPtr<IMMEndpoint> endpoint;
+        hr = device.As(&endpoint);
+        if (FAILED(hr)) return checked(hr);
+        EDataFlow flow = eAll;
+        hr = endpoint->GetDataFlow(&flow);
+        if (FAILED(hr)) return checked(hr);
+        if (flow != eRender) return RenderError::deviceUnavailable;
+        try {
+            hr = readEndpointId(*device.Get(), resolved.id);
+            if (FAILED(hr)) return checked(hr);
+            if (choice && resolved.id != choice->id) return RenderError::deviceUnavailable;
+            resolved.name = readEndpointName(*device.Get());
+        } catch (const std::bad_alloc&) {
+            return checked(E_OUTOFMEMORY);
+        }
         hr = device->Activate(__uuidof(IAudioClient), CLSCTX_INPROC_SERVER, nullptr,
                               reinterpret_cast<void**>(client.GetAddressOf()));
         if (FAILED(hr)) return checked(hr);
@@ -123,6 +178,7 @@ public:
     std::uint32_t nativeError() const noexcept override { return static_cast<std::uint32_t>(lastError); }
 
     Event stopReady{true};
+    RenderEndpointInfo resolved;
 
 private:
     RenderError checked(HRESULT hr) noexcept {
@@ -141,6 +197,7 @@ private:
         return RenderError::driver;
     }
 
+    const RenderEndpointChoice& choice;
     Event bufferReady;
     ComPtr<IAudioClient> client;
     ComPtr<IAudioRenderClient> render;
@@ -148,7 +205,34 @@ private:
 };
 }
 
-SharedRenderReport runWasapiOutput(PlaybackMixer& mixer, SharedRenderConfig config,
+std::vector<RenderEndpointInfo> listWasapiRenderEndpoints() {
+    const ComApartment apartment(COINIT_APARTMENTTHREADED);
+    if (FAILED(apartment.result) && apartment.result != RPC_E_CHANGED_MODE) {
+        throw std::runtime_error("Windows audio services could not initialize for device discovery.");
+    }
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IMMDeviceCollection> devices;
+    if (FAILED(makeEnumerator(enumerator)) ||
+        FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, devices.GetAddressOf()))) {
+        throw std::runtime_error("Could not list active WASAPI outputs. Check Windows Sound settings and retry.");
+    }
+
+    UINT count = 0;
+    if (FAILED(devices->GetCount(&count))) throw std::runtime_error("Could not read the WASAPI output list.");
+    std::vector<RenderEndpointInfo> endpoints;
+    for (UINT index = 0; index < count; ++index) {
+        ComPtr<IMMDevice> device;
+        RenderEndpointInfo entry;
+        if (FAILED(devices->Item(index, device.GetAddressOf())) ||
+            FAILED(readEndpointId(*device.Get(), entry.id)) || findRenderEndpoint(endpoints, entry.id)) continue;
+        entry.name = readEndpointName(*device.Get());
+        endpoints.push_back(std::move(entry));
+    }
+    sortRenderEndpoints(endpoints);
+    return endpoints;
+}
+
+WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig config,
                                   const std::atomic<unsigned>& muteMask, std::atomic<unsigned>& played,
                                   std::stop_token stop) noexcept {
     const ComApartment apartment;
@@ -156,14 +240,15 @@ SharedRenderReport runWasapiOutput(PlaybackMixer& mixer, SharedRenderConfig conf
         SharedRenderReport report;
         report.end = RenderEnd::failed;
         report.error = RenderError::driver;
-        report.requestedFrames = config.requestedFrames;
+        report.requestedFrames = config.stream.requestedFrames;
         report.nativeError = static_cast<std::uint32_t>(apartment.result);
-        return report;
+        return {report, std::move(config.output), {}};
     }
-    WasapiEndpoint endpoint;
+    WasapiEndpoint endpoint(config.output);
     std::stop_callback wakeOnStop(stop, [&endpoint] {
         if (endpoint.stopReady.handle) SetEvent(endpoint.stopReady.handle);
     });
-    return renderShared(endpoint, mixer, config, muteMask, played, stop);
+    const auto report = renderShared(endpoint, mixer, config.stream, muteMask, played, stop);
+    return {report, std::move(config.output), std::move(endpoint.resolved)};
 }
 }

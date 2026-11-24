@@ -39,7 +39,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Use **Devices** to select the WinMM input and output for the app run. For the opt-in playback preview, choose **Playback: WASAPI shared** and select **System period** or a custom period request. WASAPI uses the Windows default output. Find the latest attempt under **Last WASAPI playback diagnostics**. Switch back to **Playback: WinMM** to use the fallback. [WASAPI scope and physical test procedure](docs/WASAPI_PREVIEW.md)
+Use **Devices** to select the WinMM input and output for the app run. For the opt-in playback preview, choose **Playback: WASAPI shared**, then **Choose WASAPI output** to select an active output or follow the Windows default. Choose **System period** or request a custom period. Find the output identity and stream result under **Last WASAPI playback diagnostics**. Switch back to **Playback: WinMM** to use the fallback. [WASAPI scope and physical test procedure](docs/WASAPI_PREVIEW.md)
 
 The Windows CI build also checks the native workspace commands. Linux and macOS
 CI build and test the shared mixer, Session storage, and audio import code.
