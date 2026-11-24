@@ -42,11 +42,8 @@ bool convert(const CapturePacket& packet, const CaptureStreamReport& report,
 }
 
 std::optional<double> CaptureTiming::driftPpm() const noexcept {
-    if (!first || !last || last->qpc100ns <= first->qpc100ns ||
-        last->deviceFrame <= first->deviceFrame) return {};
-    const auto frames = static_cast<double>(last->deviceFrame - first->deviceFrame);
-    const auto elapsed = static_cast<double>(last->qpc100ns - first->qpc100ns);
-    return (frames * 10000000.0 / (elapsed * sampleRate) - 1.0) * 1000000.0;
+    if (const auto ratio = clock.rateRatio()) return (*ratio - 1.0) * 1'000'000.0;
+    return {};
 }
 
 CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& sink,
@@ -133,13 +130,9 @@ CaptureStreamReport captureShared(SharedCaptureEndpoint& endpoint, CaptureSink& 
             if (packet.silent) report.silentFrames += static_cast<unsigned>(mono.size());
             report.timing.lastDeviceFrame = packet.deviceFrame;
             if (!report.timing.firstDeviceFrame) report.timing.firstDeviceFrame = packet.deviceFrame;
-            if (packet.timestampError || !packet.qpc100ns || !*packet.qpc100ns ||
-                (report.timing.last && *packet.qpc100ns <= report.timing.last->qpc100ns)) {
-                ++report.timing.unreliableTimestamps;
-            } else {
-                report.timing.last = CaptureStamp{*packet.deviceFrame, *packet.qpc100ns};
-                if (!report.timing.first) report.timing.first = report.timing.last;
-            }
+            std::optional<ClockStamp> stamp;
+            if (!packet.timestampError && packet.qpc100ns) stamp = ClockStamp{{*packet.deviceFrame}, {*packet.qpc100ns}};
+            report.timing.clock.observe(stamp, packet.observedAt);
         }
         if (report.error != CaptureError::none) break;
     }

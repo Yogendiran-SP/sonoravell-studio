@@ -1,5 +1,6 @@
 #pragma once
 
+#include "stream_clock.hpp"
 #include "take_journal.hpp"
 
 #include <cstddef>
@@ -14,15 +15,9 @@ enum class CaptureError {
 enum class CaptureStage { open, start, wait, acquire, packet, release, queue, stop };
 enum class CaptureEnd { limit, stopped, interrupted };
 
-struct CaptureStamp {
-    std::uint64_t deviceFrame;
-    std::uint64_t qpc100ns;
-};
-
 struct CaptureTiming {
-    std::optional<CaptureStamp> first, last;
+    StreamClock clock{sampleRate};
     std::optional<std::uint64_t> firstDeviceFrame, lastDeviceFrame;
-    unsigned unreliableTimestamps = 0;
     std::optional<double> driftPpm() const noexcept;
 };
 
@@ -47,6 +42,7 @@ struct CapturePacket {
     unsigned frames = 0;
     bool silent = false, discontinuity = false, timestampError = false;
     std::optional<std::uint64_t> deviceFrame, qpc100ns;
+    std::optional<QpcTime> observedAt{};
 };
 
 class SharedCaptureEndpoint {

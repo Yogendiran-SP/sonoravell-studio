@@ -6,6 +6,7 @@
 #include "shared_audio_period.hpp"
 #include "windows_wasapi.hpp"
 #include "windows_wasapi_endpoints.hpp"
+#include "windows_qpc.hpp"
 
 #include <memory>
 #include <utility>
@@ -78,7 +79,15 @@ public:
         hr = client->SetEventHandle(bufferReady.handle);
         if (FAILED(hr)) return checked(hr);
         hr = client->GetService(IID_PPV_ARGS(render.GetAddressOf()));
-        return checked(hr);
+        if (FAILED(hr)) return checked(hr);
+        UINT64 rate = 0;
+        if (SUCCEEDED(client->GetService(IID_PPV_ARGS(audioClock.GetAddressOf()))) &&
+            SUCCEEDED(audioClock->GetFrequency(&rate)) && rate) {
+            clock = StreamClock{rate};
+        } else {
+            audioClock.Reset();
+        }
+        return RenderError::none;
     }
 
     RenderError padding(unsigned& frames) noexcept override { return checked(client->GetCurrentPadding(&frames)); }
@@ -98,6 +107,7 @@ public:
     RenderError stop() noexcept override { return checked(client->Stop()); }
 
     RenderError wait(std::stop_token stop, bool& cancelled) noexcept override {
+        if (!stop.stop_requested()) sampleClock();
         const HANDLE events[]{stopReady.handle, bufferReady.handle};
         const auto signalled = WaitForMultipleObjects(2, events, FALSE, 2000);
         cancelled = signalled == WAIT_OBJECT_0 || stop.stop_requested();
@@ -115,8 +125,26 @@ public:
 
     Event stopReady{true};
     AudioEndpointInfo resolved;
+    StreamClock clock{};
 
 private:
+    void sampleClock() noexcept {
+        if (!audioClock) return;
+        const auto now = referenceClock.now();
+        if (!now) {
+            clock.observe({}, {});
+            return;
+        }
+        if (lastPoll && now->ticks100ns >= lastPoll->ticks100ns &&
+            now->ticks100ns - lastPoll->ticks100ns < qpcTicksPerSecond / 10) return;
+        lastPoll = now;
+        UINT64 position = 0, qpc = 0;
+        std::optional<ClockStamp> stamp;
+        // S_FALSE indicates lower timestamp accuracy. Treat it as missing evidence.
+        if (audioClock->GetPosition(&position, &qpc) == S_OK) stamp = ClockStamp{{position}, {qpc}};
+        clock.observe(stamp, referenceClock.now());
+    }
+
     RenderError checked(HRESULT hr) noexcept {
         lastError = FAILED(hr) ? hr : S_OK;
         if (SUCCEEDED(hr)) return RenderError::none;
@@ -137,6 +165,9 @@ private:
     Event bufferReady;
     ComPtr<IAudioClient> client;
     ComPtr<IAudioRenderClient> render;
+    ComPtr<IAudioClock> audioClock;
+    WindowsQpc referenceClock;
+    std::optional<QpcTime> lastPoll;
     HRESULT lastError = S_OK;
 };
 }
@@ -162,6 +193,6 @@ WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig conf
         if (endpoint.stopReady.handle) SetEvent(endpoint.stopReady.handle);
     });
     const auto report = renderShared(endpoint, mixer, config.stream, muteMask, played, stop);
-    return {report, std::move(config.output), std::move(endpoint.resolved)};
+    return {report, std::move(config.output), std::move(endpoint.resolved), endpoint.clock};
 }
 }

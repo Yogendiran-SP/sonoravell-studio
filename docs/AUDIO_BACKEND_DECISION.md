@@ -49,9 +49,10 @@ handoff and records correlated capture clock anchors. The Session transport
 still stops playback before recording. First qualify the input and output
 previews separately with physical endpoint loss and recording recovery.
 
-Then prototype correlation of the independent capture and render clocks
-against QPC, including reset, missing timestamps, start offset and relative
-drift. Define a transport timeline and an alignment error budget based on
+The [clock model](WASAPI_CLOCKS.md) collects independent anchors and tests
+start offset, drift, and bad timestamp handling using simulated pairs. A
+future simultaneous test build needs a transport timeline, a single owner
+for endpoint and writer lifecycle, and an alignment error budget based on
 measured loopback behavior. Validate both streams under scheduling and
 storage pressure, with bounded queues, explicit dropout/overrun reporting,
 and recovery of the last checksummed audio prefix if either endpoint fails.

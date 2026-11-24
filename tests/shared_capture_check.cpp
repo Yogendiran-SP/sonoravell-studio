@@ -26,6 +26,7 @@ public:
     bool cancel = false, ordered = true;
     unsigned opens = 0, starts = 0, stops = 0, waits = 0, acquired = 0, released = 0, rejected = 0;
     unsigned outstanding = 0;
+    std::uint64_t observedAt = 0;
 
     CaptureError open(CaptureStreamConfig, CaptureStreamReport& report) noexcept override {
         ++opens;
@@ -43,6 +44,8 @@ public:
         if (invalidationAt && acquired + 1 == invalidationAt) return CaptureError::deviceInvalidated;
         if (acquired == packets.size()) return CaptureError::none;
         packet = packets[acquired++];
+        if (packet.qpc100ns) observedAt = std::max(observedAt, *packet.qpc100ns);
+        if (observedAt && !packet.observedAt) packet.observedAt = QpcTime{observedAt};
         outstanding = packet.frames;
         return CaptureError::none;
     }
@@ -177,9 +180,11 @@ void checkClockAndFailures() {
     };
     const auto report = clock.run(2400);
     const auto ppm = report.timing.driftPpm();
+    const auto& evidence = report.timing.clock;
     check(report.end == CaptureEnd::limit && report.timing.firstDeviceFrame == frame &&
-          report.timing.lastDeviceFrame == frame + 1920 && report.timing.first->qpc100ns == offset &&
-          report.timing.last->deviceFrame == frame + 1920 && report.timing.unreliableTimestamps == 3 &&
+          report.timing.lastDeviceFrame == frame + 1920 && evidence.first()->qpc.ticks100ns == offset &&
+          evidence.last()->position.units == frame + 1920 && evidence.rejected().missing == 2 &&
+          evidence.rejected().nonmonotonic == 1 &&
           ppm && std::abs(*ppm - 100.01) < 0.01 && clock.sink.take().size() == 2400,
           "Clock offset, drift and unreliable timestamps must remain independent of PCM order.");
 

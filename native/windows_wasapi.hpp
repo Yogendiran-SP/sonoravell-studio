@@ -2,6 +2,7 @@
 
 #include "audio_endpoints.hpp"
 #include "shared_render.hpp"
+#include "stream_clock.hpp"
 
 namespace sonoravell {
 struct WasapiOutputConfig {
@@ -13,6 +14,7 @@ struct WasapiOutputReport {
     SharedRenderReport stream;
     AudioEndpointChoice requested;
     AudioEndpointInfo resolved;
+    StreamClock clock{};
 };
 
 // Enumerates active render endpoints for the control thread. A failed

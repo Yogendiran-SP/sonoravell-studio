@@ -7,6 +7,7 @@
 #include "shared_audio_period.hpp"
 #include "windows_wasapi_capture.hpp"
 #include "windows_wasapi_endpoints.hpp"
+#include "windows_qpc.hpp"
 
 #include <limits>
 #include <memory>
@@ -129,6 +130,7 @@ public:
         packet.timestampError = (flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR) != 0;
         if (device != missingPosition) packet.deviceFrame = device;
         if (qpc) packet.qpc100ns = qpc;
+        packet.observedAt = referenceClock.now();
         if (data && frames <= bufferFrames && !packet.silent) {
             packet.bytes = {reinterpret_cast<const std::byte*>(data), static_cast<std::size_t>(frames) * frameBytes};
         }
@@ -158,6 +160,7 @@ private:
     const HANDLE stopEvent, ready = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     ComPtr<IAudioClient> client;
     ComPtr<IAudioCaptureClient> capture;
+    WindowsQpc referenceClock;
     unsigned bufferFrames = 0, frameBytes = 0;
     HRESULT lastError = S_OK;
 };
