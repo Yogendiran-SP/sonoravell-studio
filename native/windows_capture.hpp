@@ -1,6 +1,7 @@
 #pragma once
 
 #include "take_journal.hpp"
+#include "windows_wasapi_capture.hpp"
 
 #include <memory>
 
@@ -11,6 +12,9 @@ struct CaptureResult {
     std::filesystem::path path;
     RecoveredTake take;
     bool interrupted = false;
+    bool storageFailed = false;
+    std::optional<WasapiInputReport> wasapi;
+    bool diagnosticsSaved = false;
 };
 
 class Capture {
@@ -20,7 +24,7 @@ public:
 
     bool active() const;
     bool finished() const;
-    void start(unsigned frames, unsigned tick, unsigned deviceId);
+    void start(unsigned frames, unsigned tick, unsigned deviceId, std::optional<WasapiInputConfig> wasapi = {});
     void requestStop();
     CaptureResult finish();
 

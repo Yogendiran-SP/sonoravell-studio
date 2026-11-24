@@ -20,13 +20,25 @@ struct CaptureBlock {
 class TakeQueue {
 public:
     bool push(std::span<const std::int16_t> input) noexcept {
-        const auto write = head.load(std::memory_order_relaxed);
-        const auto next = (write + 1) % blocks.size();
-        if (next == tail.load(std::memory_order_acquire) || input.size() > captureBlockFrames) return false;
-        auto& block = blocks[write];
-        std::ranges::copy(input, block.samples.begin());
-        block.count = static_cast<unsigned>(input.size());
-        head.store(next, std::memory_order_release);
+        return input.size() <= captureBlockFrames && pushPacket(input);
+    }
+
+    // Publish the whole packet or none of it, including packets that span slots.
+    bool pushPacket(std::span<const std::int16_t> input) noexcept {
+        if (input.empty() || input.size() > takeBlockFrames) return false;
+        auto write = head.load(std::memory_order_relaxed);
+        const auto read = tail.load(std::memory_order_acquire);
+        const auto slots = (input.size() + captureBlockFrames - 1) / captureBlockFrames;
+        if (slots > (read + blocks.size() - write - 1) % blocks.size()) return false;
+        while (!input.empty()) {
+            auto& block = blocks[write];
+            const auto count = std::min(input.size(), block.samples.size());
+            std::ranges::copy(input.first(count), block.samples.begin());
+            block.count = static_cast<unsigned>(count);
+            input = input.subspan(count);
+            write = (write + 1) % blocks.size();
+        }
+        head.store(write, std::memory_order_release);
         return true;
     }
 

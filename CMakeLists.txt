@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp native/shared_render.cpp)
+add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
+  native/shared_render.cpp native/shared_capture.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
@@ -9,7 +10,8 @@ add_executable(sonoravell-render native/render_cli.cpp)
 target_link_libraries(sonoravell-render PRIVATE sonoravell_engine)
 
 if(WIN32)
-  add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_capture.cpp native/windows_devices.cpp native/windows_wasapi.cpp)
+  add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_capture.cpp native/windows_devices.cpp
+    native/windows_wasapi.cpp native/windows_wasapi_capture.cpp native/windows_wasapi_endpoints.cpp)
   target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32 gdi32 ole32)
   install(TARGETS SonoravellStudio sonoravell-render RUNTIME DESTINATION .)
   install(FILES README.md LICENSE DESTINATION .)
@@ -31,6 +33,9 @@ if(BUILD_TESTING)
   add_executable(shared_render_check tests/shared_render_check.cpp)
   target_link_libraries(shared_render_check PRIVATE sonoravell_engine)
   add_test(NAME shared_render_check COMMAND shared_render_check)
+  add_executable(shared_capture_check tests/shared_capture_check.cpp)
+  target_link_libraries(shared_capture_check PRIVATE sonoravell_engine)
+  add_test(NAME shared_capture_check COMMAND shared_capture_check)
   if(WIN32)
     add_test(NAME workspace_check COMMAND SonoravellStudio --workspace-check)
   endif()

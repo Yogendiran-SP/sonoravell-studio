@@ -7,6 +7,7 @@
 #include "windows_capture.hpp"
 
 #include <chrono>
+#include <fstream>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -99,9 +100,60 @@ private:
     std::array<Buffer, bufferCount> blocks{};
     std::size_t oldest = 0;
 };
+
+std::string utf8(const std::wstring& source) {
+    if (source.empty()) return {};
+    const auto length = static_cast<int>(source.size());
+    const auto count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, source.data(), length, nullptr, 0, nullptr, nullptr);
+    if (!count) return {};
+    std::string encoded(count, '\0');
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, source.data(), length, encoded.data(), count, nullptr, nullptr)) return {};
+    return encoded;
 }
 
-struct Capture::Run {
+bool saveCaptureDiagnostics(const std::filesystem::path& journal, const WasapiInputReport& report,
+                            bool storageFailed, std::size_t verifiedFrames) noexcept {
+    try {
+        auto path = journal;
+        path += L".capture.txt";
+        std::ofstream output(path);
+        if (!output) return false;
+        const auto& stream = report.stream;
+        output << "WASAPI shared capture\n"
+               << "Requested input: " << (report.requested ? utf8(report.requested->name) : "Windows default") << '\n'
+               << "Requested endpoint ID: " << (report.requested ? utf8(report.requested->id) : "Default") << '\n'
+               << "Resolved input: " << utf8(report.resolved.name) << '\n'
+               << "Resolved endpoint ID: " << utf8(report.resolved.id) << '\n'
+               << "Outcome: " << (storageFailed || stream.end == CaptureEnd::interrupted ? "Interrupted" :
+                                   stream.end == CaptureEnd::stopped ? "User Stop" : "Session frame limit") << '\n'
+               << "Stage: " << captureStageText(stream.stage) << '\n'
+               << "Stream error: " << captureErrorText(stream.error) << '\n'
+               << "Storage failed: " << (storageFailed ? "Yes" : "No") << '\n'
+               << "Native status: 0x" << std::hex << stream.nativeError << std::dec << '\n'
+               << "Mix rate and channels: " << stream.rate << ' ' << stream.channels << '\n'
+               << "Requested period frames (0 = system): " << stream.requestedPeriodFrames << '\n'
+               << "Selected custom period frames: " << stream.selectedPeriodFrames << '\n'
+               << "Allocated buffer frames: " << stream.bufferFrames << '\n'
+               << "Queued frames: " << stream.acceptedFrames << '\n'
+               << "Verified journal frames: " << verifiedFrames << '\n'
+               << "Genuine silent frames: " << stream.silentFrames << '\n'
+               << "Unreliable timestamps: " << stream.timing.unreliableTimestamps << '\n';
+        if (stream.timing.firstDeviceFrame) output << "First device frame: " << *stream.timing.firstDeviceFrame << '\n';
+        if (stream.timing.lastDeviceFrame) output << "Last packet device frame: " << *stream.timing.lastDeviceFrame << '\n';
+        if (stream.timing.first) output << "First correlated frame/QPC (100 ns): "
+                                       << stream.timing.first->deviceFrame << ' ' << stream.timing.first->qpc100ns << '\n';
+        if (stream.timing.last) output << "Last correlated frame/QPC (100 ns): "
+                                      << stream.timing.last->deviceFrame << ' ' << stream.timing.last->qpc100ns << '\n';
+        if (const auto drift = stream.timing.driftPpm()) output << "Observed rate error vs 48 kHz (ppm): " << *drift << '\n';
+        output.close();
+        return static_cast<bool>(output);
+    } catch (...) {
+        return false;
+    }
+}
+}
+
+struct Capture::Run final : CaptureSink {
     Run(std::filesystem::path destination, unsigned tick)
         : path(std::move(destination)), journal(std::make_unique<TakeWriter>(path, tick)) {}
 
@@ -116,7 +168,18 @@ struct Capture::Run {
         if (input && (!input->reset() || !input->close())) (void)input.release();
     }
 
-    void begin(unsigned frames, unsigned deviceId) {
+    void begin(unsigned frames, unsigned deviceId, std::optional<WasapiInputConfig> config) {
+        if (config) {
+            writer = std::thread([this] { write(); });
+            producer = std::thread([this, frames, config = std::move(*config)]() mutable {
+                wasapi = runWasapiCapture(*this, std::move(config), frames, stop.get());
+                if (wasapi->stream.end == CaptureEnd::interrupted) interrupted.store(true);
+                inputDone.store(true);
+                dataAvailable.signal();
+            });
+            return;
+        }
+        input = std::make_unique<InputDevice>();
         input->open(deviceId);
         queueAvailable(frames);
         if (interrupted.load() || waveInStart(input->handle) != MMSYSERR_NOERROR) {
@@ -145,6 +208,13 @@ struct Capture::Run {
         }
         dataAvailable.signal();
         return true;
+    }
+
+    CaptureError push(std::span<const std::int16_t> packet) noexcept override {
+        if (writeFailed.load()) return CaptureError::storage;
+        if (!queue.pushPacket(packet)) return CaptureError::queueFull;
+        dataAvailable.signal();
+        return CaptureError::none;
     }
 
     void capture(unsigned remaining) noexcept {
@@ -218,7 +288,8 @@ struct Capture::Run {
     std::filesystem::path path;
     std::unique_ptr<TakeWriter> journal;
     Event stop{true}, dataAvailable;
-    std::unique_ptr<InputDevice> input = std::make_unique<InputDevice>();
+    std::unique_ptr<InputDevice> input;
+    std::optional<WasapiInputReport> wasapi;
     TakeQueue queue;
     std::atomic<bool> inputDone{false}, writerDone{false}, interrupted{false}, writeFailed{false};
     std::thread producer, writer;
@@ -239,7 +310,7 @@ Capture::~Capture() = default;
 bool Capture::active() const { return static_cast<bool>(run); }
 bool Capture::finished() const { return run && run->writerDone.load() && run->inputDone.load(); }
 
-void Capture::start(unsigned frames, unsigned tick, unsigned deviceId) {
+void Capture::start(unsigned frames, unsigned tick, unsigned deviceId, std::optional<WasapiInputConfig> wasapi) {
     if (active() || !frames || frames > maxAssetSamples / channelCount) {
         throw std::runtime_error("There is no capacity for another recording.");
     }
@@ -248,7 +319,7 @@ void Capture::start(unsigned frames, unsigned tick, unsigned deviceId) {
     const auto stamp = std::chrono::system_clock::now().time_since_epoch().count();
     const auto name = "Take-" + std::to_string(stamp) + "-" + std::to_string(std::random_device{}()) + takeExtension;
     auto next = std::make_unique<Run>(directory / name, tick);
-    next->begin(frames, deviceId);
+    next->begin(frames, deviceId, std::move(wasapi));
     run = std::move(next);
 }
 
@@ -258,8 +329,11 @@ CaptureResult Capture::finish() {
     if (!finished()) throw std::runtime_error("The recording is still being committed to local storage.");
     const auto path = run->path;
     const auto interrupted = run->interrupted.load();
+    const auto storageFailed = run->writeFailed.load();
+    auto wasapi = std::move(run->wasapi);
     run.reset();
     auto take = recoverTake(path);
-    return {path, std::move(take), interrupted};
+    const bool diagnosticsSaved = wasapi && saveCaptureDiagnostics(path, *wasapi, storageFailed, take.stereo.size() / channelCount);
+    return {path, std::move(take), interrupted, storageFailed, std::move(wasapi), diagnosticsSaved};
 }
 }

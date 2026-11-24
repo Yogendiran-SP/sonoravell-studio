@@ -1,6 +1,6 @@
 # Current native-development baseline
 
-Audit date: 2026-11-24. The render-endpoint increment is based on audited main at `33544f93f94a472e8ea623cbf22e75ef08a9b9f4`. This includes [PR #8](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8) for take recovery, [PR #9](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9) for Session checkpoints, [PR #10](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10) for WinMM device selection and [PR #11](https://github.com/Yogendiran-SP/sonoravell-studio/pull/11) for event-driven WASAPI render. See the [WASAPI preview](WASAPI_PREVIEW.md) for endpoint-selection evidence and the physical acceptance gate.
+Audit date: 2026-11-24. The capture increment is based on main at `0ea7877e1919b8e8ad75c7c8270a50357f355b66`, the merge of [PR #12](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12) for render endpoint selection. Its [Windows, macOS and Linux checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45418445382) passed. Earlier evidence includes [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10) and [event-driven WASAPI render](https://github.com/Yogendiran-SP/sonoravell-studio/pull/11).
 
 ## Implemented in repository source
 
@@ -12,16 +12,17 @@ Audit date: 2026-11-24. The render-endpoint increment is based on audited main a
 - Local Session autosave rotates two staged checkpoints per working Session. Restore opens a copy with its embedded audio.
 - Edit MIDI note pitch/beat/duration, delete, undo last edit, click ruler to locate playback, focus/Inspector/Browser/Mixer workspace toggles and command search.
 - Opt-in event-driven WASAPI shared-mode render for an explicitly selected output or the Windows multimedia default, with period requests and endpoint and stream diagnostics. A lost output stops the attempt and can be reopened on an explicit Play. WinMM remains the launch default.
+- Opt-in [WASAPI shared capture](WASAPI_CAPTURE.md) for a single mono take from a supported 48 kHz Windows input. Live packet checks, a bounded handoff and the existing journal preserve the accepted prefix on interruption. Capture and render choose endpoints and periods independently.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
-Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/render_endpoints.hpp`, and the `tests` directory.
+Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/windows_wasapi_capture.cpp`, `native/audio_endpoints.hpp`, and the `tests` directory.
 
 ## Limitations still open
 
 - `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Recording stops playback, so simultaneous full-duplex monitoring or multitrack capture is not yet supported.
 - WASAPI render selection lasts for the app run. The picker refreshes on open, and Play looks up the chosen endpoint again. Physical routing, device loss and reconnection remain open acceptance tests.
-- Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Driver timing, device loss and physical audio remain unverified.
+- Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Clock anchors are best-effort companion diagnostics saved when a WASAPI take finishes. Real driver timing, device loss, and recorded audio remain open acceptance tests.
 - Current project limits are development caps: 16 tracks, 128 bars, 64 assets and fixed 48 kHz stereo internal sample representation; not a proof of scalable/unlimited DAW operation.
 - Only basic in-app MIDI note editing; no verified physical MIDI controller capture.
 - No demonstrated VST3/CLAP host, channel selection, latency measurement/xruns, professional hardware compatibility, full undo history, or portable legacy browser-project converter.
@@ -31,7 +32,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 ## Immediate risk-driven priority order
 
 1. **Recovery validation:** verify the [take journal](RECORDING_RECOVERY.md) with real Windows input and stress the autosave path on larger Sessions. The portable storage tests cover interrupted writes and independent checkpoints.
-2. **Device abstraction and real-time telemetry:** validate explicit WASAPI render selection on hardware. The [backend decision](AUDIO_BACKEND_DECISION.md) specifies the next capture-only adapter, independent clock evidence and recording recovery gates.
+2. **Device abstraction and real-time telemetry:** validate WASAPI render and capture selection, restart and recovery on real Windows inputs. The [backend decision](AUDIO_BACKEND_DECISION.md) records clock, loopback and data-safety dependencies for full duplex.
 3. **Project persistence and regression:** comprehensive session schema migration tests, undo/redo history, autosaves, reload of large sessions, failed-save atomicity, and clip relinking when external assets arrive.
 4. **Recording/editing vertical slice:** selectable input/output, simultaneous playback + capture, basic clip trim/move/split, track arming and MIDI device input.
 5. **Release gates:** G0 verified hardware callback evidence, G1 recoverable sessions/recordings, G2 usable offline production workflow before any cloud/live dependence.

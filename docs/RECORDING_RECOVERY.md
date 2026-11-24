@@ -16,6 +16,10 @@ notification does no application allocation, disk I/O, or network work.
 The GUI requests Stop asynchronously and adds a track after the writer
 closes. The existing playback backend remains in place.
 
+The [opt-in WASAPI capture preview](WASAPI_CAPTURE.md) feeds the same queue
+and journal writer. It validates packet ownership and contiguous positions
+before publishing a packet. Both paths replay the same recovery format.
+
 The local take format has a versioned signature, checksummed beat position,
 and length-prefixed PCM blocks with checksums. The writer flushes each
 completed block (normally 200 ms) and records a separate end marker.
@@ -70,6 +74,6 @@ Unsaved edits since the last successful checkpoint can still be lost.
 Snapshot writes run on the idle UI thread and may delay new input on slow
 storage. Files remain available for manual recovery and cleanup.
 
-The next dependency is a device backend boundary with capability and format
-negotiation. Full duplex, physical device selection and measured dropouts
-remain open.
+The next gate is to repeat the recovery and reconnect procedures with the
+WASAPI capture adapter on a Windows microphone and AudioBox. Full duplex
+adds independent clock alignment and simultaneous fault-injection gates.
