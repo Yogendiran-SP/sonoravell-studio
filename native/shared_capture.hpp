@@ -3,6 +3,7 @@
 #include "stream_clock.hpp"
 #include "take_journal.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <optional>
 
@@ -23,6 +24,7 @@ struct CaptureTiming {
 
 struct CaptureStreamConfig {
     unsigned requestedFrames = 0; // Zero lets Windows choose the event period.
+    std::uint64_t attempt = 0;
 };
 
 struct CaptureStreamReport {
@@ -66,7 +68,7 @@ public:
 };
 
 CaptureStreamReport captureShared(SharedCaptureEndpoint&, CaptureSink&, CaptureStreamConfig,
-                                  unsigned frameLimit) noexcept;
+                                  unsigned frameLimit, std::atomic<bool>* ready = nullptr) noexcept;
 const char* captureErrorText(CaptureError) noexcept;
 const char* captureStageText(CaptureStage) noexcept;
 }

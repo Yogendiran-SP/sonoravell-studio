@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
 add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
-  native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp)
+  native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
+  native/duplex_transport.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
@@ -42,6 +43,10 @@ if(BUILD_TESTING)
   add_executable(duplex_coordination_check tests/duplex_coordination_check.cpp)
   target_link_libraries(duplex_coordination_check PRIVATE sonoravell_engine)
   add_test(NAME duplex_coordination_check COMMAND duplex_coordination_check)
+  add_executable(duplex_transport_check tests/duplex_transport_check.cpp)
+  target_link_libraries(duplex_transport_check PRIVATE sonoravell_engine Threads::Threads)
+  add_test(NAME duplex_transport_check COMMAND duplex_transport_check)
+  set_tests_properties(duplex_transport_check PROPERTIES TIMEOUT 30)
   if(WIN32)
     add_test(NAME workspace_check COMMAND SonoravellStudio --workspace-check)
   endif()

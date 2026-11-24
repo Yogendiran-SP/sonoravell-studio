@@ -1,6 +1,6 @@
 # Current native-development baseline
 
-Audit date: 2026-11-24. The coordination increment starts at `66a95be28a1621d23099b8ac2f1e02d4b7bff69c`, the merge of [PR #14](https://github.com/Yogendiran-SP/sonoravell-studio/pull/14) for WASAPI clock evidence. Its [Windows, macOS and Linux checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425130199) passed. Earlier evidence includes [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10), [WASAPI render selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12) and [journaled WASAPI capture](https://github.com/Yogendiran-SP/sonoravell-studio/pull/13).
+Audit date: 2026-11-24. The experimental transport starts at `a4e4b5868e8f506b7bae66fe5bc6ea5abf376a72`, the merge of [PR #15](https://github.com/Yogendiran-SP/sonoravell-studio/pull/15) for coordination. The [clock](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425130199) and [coordination](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425931355) checks passed on Windows, macOS and Linux. Earlier increments include [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10), [WASAPI output selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12) and [journaled WASAPI input](https://github.com/Yogendiran-SP/sonoravell-studio/pull/13).
 
 ## Implemented in repository source
 
@@ -14,7 +14,7 @@ Audit date: 2026-11-24. The coordination increment starts at `66a95be28a1621d230
 - Opt-in event-driven WASAPI shared-mode render for an explicitly selected output or the Windows multimedia default, with period requests and endpoint and stream diagnostics. A lost output stops the attempt and can be reopened on an explicit Play. WinMM remains the launch default.
 - Opt-in [WASAPI shared capture](WASAPI_CAPTURE.md) for a single mono take from a supported 48 kHz Windows input. Live packet checks, a bounded handoff and the existing journal preserve the accepted prefix on interruption. Capture and render choose endpoints and periods independently.
 - Independent [WASAPI clock diagnostics](WASAPI_CLOCKS.md) record capture and render position/QPC anchors. The paired clock model is exercised with simulated streams.
-- A [recording-first duplex state machine](WASAPI_COORDINATION.md) is exercised in software and awaits transport integration and hardware qualification.
+- An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
@@ -22,7 +22,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 
 ## Limitations still open
 
-- `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Recording stops playback, so simultaneous full-duplex monitoring or multitrack capture is not yet supported.
+- `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Independent Record stops playback. Experimental WASAPI recording with playback awaits physical qualification. Live monitoring and multitrack capture remain future work.
 - WASAPI render selection lasts for the app run. The picker refreshes on open, and Play looks up the chosen endpoint again. Physical routing, device loss and reconnection remain open acceptance tests.
 - Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Clock anchors are best-effort companion diagnostics saved when a WASAPI take finishes. Real driver timing, device loss, and recorded audio remain open acceptance tests.
 - Current project limits are development caps: 16 tracks, 128 bars, 64 assets and fixed 48 kHz stereo internal sample representation; not a proof of scalable/unlimited DAW operation.

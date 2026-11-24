@@ -18,5 +18,6 @@ struct WasapiInputReport {
 std::vector<AudioEndpointInfo> listWasapiCaptureEndpoints();
 
 // Called only by the capture worker. The event is a borrowed Windows HANDLE.
-WasapiInputReport runWasapiCapture(CaptureSink&, WasapiInputConfig, unsigned limit, void* stopEvent) noexcept;
+WasapiInputReport runWasapiCapture(CaptureSink&, WasapiInputConfig, unsigned limit, void* stopEvent,
+                                   std::atomic<bool>* ready = nullptr) noexcept;
 }

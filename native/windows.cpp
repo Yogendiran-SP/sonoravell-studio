@@ -11,6 +11,7 @@
 #include "windows_audio.hpp"
 #include "windows_capture.hpp"
 #include "windows_devices.hpp"
+#include "windows_qpc.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -39,13 +40,23 @@ enum ControlId {
     toggleInspectorId, toggleBrowserId, toggleMixerId, resetLayoutId, recoverId, restoreSessionId, deviceId, selectInputId, selectOutputId,
     selectWaveOutId, selectWasapiId, selectWasapiOutputId, selectPeriodId, renderReportId,
     selectWaveInId, selectWasapiCaptureId, selectWasapiInputId, selectCaptureBufferId, captureReportId,
+    startDuplexId, duplexReportId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId
 };
 
 Project project = afterHoursProject();
-std::unique_ptr<SessionAudio> prepared;
+std::shared_ptr<const SessionAudio> prepared;
 Output audio;
 Capture capture;
+DuplexTransport duplex;
+struct DuplexProgress {
+    std::uint64_t attempt = 0;
+    unsigned sessionTick = 0;
+    bool inputExited = false, outputExited = false;
+    std::optional<QpcTime> settledAt;
+};
+DuplexProgress duplexProgress;
+std::wstring lastDuplexDiagnostics;
 EndpointChoice inputChoice, outputChoice;
 bool useWasapi = false;
 WasapiOutputConfig wasapiConfig;
@@ -478,9 +489,9 @@ std::filesystem::path selectFile(HWND window, bool save, const wchar_t* filter, 
     return {};
 }
 
-const SessionAudio& renderedSession() {
-    if (!prepared) prepared = std::make_unique<SessionAudio>(project);
-    return *prepared;
+const std::shared_ptr<const SessionAudio>& renderedSession() {
+    if (!prepared) prepared = std::make_shared<const SessionAudio>(project);
+    return prepared;
 }
 
 void addAudio(HWND window, AudioAsset asset, unsigned tick) {
@@ -518,8 +529,7 @@ void addRecoveredTake(HWND window, RecoveredTake take, bool interrupted) {
         : L"Recording added. The recovery copy remains on disk. Save Session to keep the edit.");
 }
 
-void finishTake(HWND window) {
-    auto result = capture.finish();
+void finishTake(HWND window, CaptureResult result) {
     const auto error = result.wasapi ? result.wasapi->stream.error : CaptureError::none;
     const bool recovered = !result.take.stereo.empty();
     if (result.wasapi) {
@@ -547,13 +557,16 @@ void showCommands(HWND window) {
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
          {openId, L"Open Session..."}, {deviceId, L"Audio devices..."}, {restoreSessionId, L"Restore Session checkpoint..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
          {addTrackId, L"Add instrument"}, {placeId, L"Place audio source"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
+        {startDuplexId, L"Record with playback (experimental)"}, {duplexReportId, L"Last experimental duplex diagnostics..."},
          {exportId, L"Export WAV..."}, {undoId, L"Undo last edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
          {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
          {toggleInspectorId, L"Toggle Inspector"}, {toggleBrowserId, L"Toggle Browser"},
          {toggleMixerId, L"Toggle Mixer"}, {resetLayoutId, L"Reset workspace"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
-        AppendMenuW(menu, MF_STRING | (!action || IsWindowEnabled(action) ? MF_ENABLED : MF_GRAYED),
+        const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
+                                                           : !action || IsWindowEnabled(action);
+        AppendMenuW(menu, MF_STRING | (available ? MF_ENABLED : MF_GRAYED),
                     entry.first, entry.second);
     }
     if (GetMenuItemCount(menu) == 0) AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"No matching commands");
@@ -814,6 +827,8 @@ void showCaptureReport(HWND window) {
     MessageBoxW(window, message.c_str(), L"WASAPI capture diagnostics", MB_OK | MB_ICONINFORMATION);
 }
 
+void execute(HWND window, int id);
+
 void showAudioDevices(HWND window) {
     const auto menu = CreatePopupMenu();
     if (!menu) return;
@@ -837,6 +852,10 @@ void showAudioDevices(HWND window) {
     AppendMenuW(menu, MF_STRING | (!useWasapiCapture ? MF_GRAYED : 0), selectWasapiInputId, wasapiInput.c_str());
     AppendMenuW(menu, MF_STRING | (!useWasapiCapture ? MF_GRAYED : 0), selectCaptureBufferId, L"WASAPI capture buffer...");
     AppendMenuW(menu, MF_STRING, captureReportId, L"Last WASAPI capture diagnostics...");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | (useWasapi && useWasapiCapture ? MF_ENABLED : MF_GRAYED),
+                startDuplexId, L"Record with playback (experimental)");
+    AppendMenuW(menu, MF_STRING, duplexReportId, L"Last experimental duplex diagnostics...");
     const auto selected = popupDeviceMenu(window, menu);
     if (capture.active()) return;
     switch (selected) {
@@ -848,6 +867,10 @@ void showAudioDevices(HWND window) {
     case selectCaptureBufferId: chooseCaptureBuffer(window); break;
     case renderReportId: showRenderReport(window); break;
     case captureReportId: showCaptureReport(window); break;
+    case startDuplexId:
+    case duplexReportId:
+        execute(window, selected);
+        break;
     case selectWaveInId:
     case selectWasapiCaptureId:
         setCaptureBackend(window, selected == selectWasapiCaptureId);
@@ -862,6 +885,97 @@ void showAudioDevices(HWND window) {
 void startPlayback() {
     if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig);
     else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
+}
+
+void applyDuplexActions(const DuplexActions& actions) {
+    if (actions.stopCapture) capture.requestStop();
+    if (actions.stopRender) audio.requestStop();
+}
+
+void startDuplex(HWND window, unsigned tick, unsigned capacity) {
+    if (!useWasapi || !useWasapiCapture) {
+        status(window, L"Select WASAPI shared for both playback and recording in Devices first.");
+        return;
+    }
+    const auto snapshot = renderedSession();
+    auto output = wasapiConfig;
+    const auto notices = std::make_shared<DuplexNotices>();
+    audio.stop();
+    const bool captureLaunched = capture.startDuplex(capacity, tick, wasapiInputConfig, duplex, notices);
+    duplexProgress = {notices->attempt(), tick};
+    playFrom = frameAtTick(tick, project.tempo);
+    if (captureLaunched) {
+        try {
+            audio.play(snapshot, playFrom, WAVE_MAPPER, std::move(output), notices);
+        } catch (...) {
+            notices->renderExited(RenderError::driver);
+        }
+    } else {
+        notices->renderExited(RenderError::none);
+    }
+    refresh(window, selectedTrack(window));
+    status(window, L"Starting experimental playback and recording. Press Stop to finish the take.");
+}
+
+std::wstring duplexEndpoint(const AudioEndpointInfo* resolved, const AudioEndpointChoice& requested) {
+    if (resolved && !resolved->id.empty()) return resolved->name + L" (" + resolved->id + L")";
+    if (requested) return requested->name + L" (" + requested->id + L")";
+    return L"Windows default (unresolved)";
+}
+
+void pollDuplex(HWND window) {
+    const auto previous = duplex.state();
+    const auto update = duplex.poll();
+    applyDuplexActions(update.actions);
+    if (update.renderExited) audio.stop();
+    const auto outcome = duplex.outcome();
+    if (update.renderExited && outcome.renderError != RenderError::none && !update.actions.takeReady) {
+        status(window, L"WASAPI output failed. Capture can continue. See duplex diagnostics after Stop.");
+    } else if (duplex.state() != previous) {
+        if (duplex.state() == DuplexState::running) status(window, L"Playing the Session and recording an experimental take.");
+        if (duplex.state() == DuplexState::captureOnly) status(window, L"Playback ended. Recording continues until Stop or the take limit.");
+    }
+    duplexProgress.inputExited |= update.captureExited;
+    duplexProgress.outputExited |= update.renderExited;
+    if ((update.captureExited || update.renderExited) && duplexProgress.inputExited && duplexProgress.outputExited) {
+        duplexProgress.settledAt = WindowsQpc{}.now();
+    }
+    if (!update.actions.takeReady) return;
+
+    CaptureResult result;
+    try {
+        result = capture.finish();
+    } catch (...) {
+        duplex.retire();
+        throw;
+    }
+    duplex.retire();
+    const auto& render = audio.lastWasapiRun();
+    const auto* pairedOutput = render && render->clock.attempt() == duplexProgress.attempt ? &*render : nullptr;
+    const auto* input = result.wasapi ? &*result.wasapi : nullptr;
+    const auto relation = input && pairedOutput && duplexProgress.settledAt
+        ? correlateClocks(input->stream.timing.clock, pairedOutput->clock, *duplexProgress.settledAt) : std::nullopt;
+    const auto inputLabel = duplexEndpoint(input ? &input->resolved : nullptr, wasapiInputConfig.input);
+    const auto outputLabel = duplexEndpoint(pairedOutput ? &pairedOutput->resolved : nullptr, wasapiConfig.output);
+    lastDuplexDiagnostics = L"Attempt: " + std::to_wstring(duplexProgress.attempt) +
+        L"\nSession start tick: " + std::to_wstring(duplexProgress.sessionTick) +
+        L"\nSession playback start frame: " + std::to_wstring(playFrom) +
+        L"\nInput: " + inputLabel + L"\nInput error: " + wide(captureErrorText(outcome.captureError)) +
+        L"\nOutput: " + outputLabel + L"\nOutput error: " + renderErrorText(outcome.renderError) +
+        L"\nStorage write failed: " + (outcome.storageFailed ? L"Yes" : L"No") +
+        L"\nVerified take frames: " + std::to_wstring(result.take.stereo.size() / channelCount) +
+        L"\n\nClock estimates (capture relative to output): " + (relation
+            ? L"start offset " + std::to_wstring(relation->captureStartOffsetSeconds * 1000.0) + L" ms, drift " +
+                std::to_wstring(relation->captureRelativeDriftPpm) + L" ppm" : L"insufficient qualified overlap") +
+        L"\nRound-trip latency: unmeasured";
+    if (input) lastDuplexDiagnostics += L"\n\nInput clock" + clockDiagnostics(input->stream.timing.clock);
+    if (pairedOutput) lastDuplexDiagnostics += L"\n\nOutput clock" + clockDiagnostics(pairedOutput->clock);
+    const bool recovered = !result.take.stereo.empty();
+    finishTake(window, std::move(result));
+    if (outcome.storageFailed || outcome.captureError != CaptureError::none || outcome.renderError != RenderError::none) {
+        status(window, recovered ? L"Experimental take recovered. See duplex diagnostics for endpoint and storage errors."
+                                 : L"Experimental take stopped without recoverable audio. See duplex diagnostics.");
+    }
 }
 
 void execute(HWND window, int id) {
@@ -881,7 +995,10 @@ void execute(HWND window, int id) {
         return;
     }
     if (id == stopId) {
-        if (capture.active()) {
+        if (duplex.active()) {
+            applyDuplexActions(duplex.stop());
+            status(window, L"Stopping both streams and settling the take journal...");
+        } else if (capture.active()) {
             capture.requestStop();
             status(window, L"Finishing the recording on disk...");
         } else {
@@ -893,6 +1010,11 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == duplexReportId) {
+        if (lastDuplexDiagnostics.empty()) status(window, L"Finish an experimental duplex take to view diagnostics.");
+        else MessageBoxW(window, lastDuplexDiagnostics.c_str(), L"Experimental duplex diagnostics", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
     if (id == deviceId) { showAudioDevices(window); return; }
     if (id == newId || id == demoId) {
         if (discardEdits(window)) {
@@ -931,7 +1053,7 @@ void execute(HWND window, int id) {
     } else if (id == exportId) {
         const auto path = selectFile(window, true, wavFilter, L"wav");
         if (!path.empty()) {
-            const auto samples = renderedSession().render(trackMutes(project));
+            const auto samples = renderedSession()->render(trackMutes(project));
             std::ofstream file(path, std::ios::binary);
             writeWave(file, samples);
             file.close();
@@ -947,13 +1069,14 @@ void execute(HWND window, int id) {
         constexpr wchar_t takeFilter[] = L"Sonoravell recorded takes\0*.sntake\0";
         const auto path = selectFile(window, false, takeFilter, L"sntake", directory.c_str());
         if (!path.empty()) addRecoveredTake(window, recoverTake(path), false);
-    } else if (id == recordId) {
+    } else if (id == recordId || id == startDuplexId) {
         if (project.tracks.size() >= maxTracks || project.assets.size() >= maxAssets) {
             throw std::runtime_error("The Session is at its track or audio source limit.");
         }
         const auto takeTick = beatInput(window, beatId, false);
         const auto capacity = recordingCapacity(project, takeTick);
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
+        if (id == startDuplexId) { startDuplex(window, takeTick, capacity); return; }
         audio.stop();
         if (useWasapiCapture) capture.start(capacity, takeTick, WAVE_MAPPER, wasapiInputConfig);
         else capture.start(capacity, takeTick, resolveWindowsAudioEndpoint(AudioDirection::input, inputChoice));
@@ -1142,7 +1265,13 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         }
         case WM_TIMER: {
             if (wParam != transportTimer) return 0;
-            if (capture.finished()) finishTake(window);
+            if (duplex.active()) {
+                pollDuplex(window);
+                const auto rect = arrangeRect(window);
+                InvalidateRect(window, &rect, FALSE);
+                return 0;
+            }
+            if (capture.finished()) finishTake(window, capture.finish());
             checkpointIfIdle(window);
             const auto state = audio.state();
             if (state == Output::State::completed || state == Output::State::failed) {
@@ -1160,7 +1289,8 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         }
         case WM_CLOSE:
             if (capture.active()) {
-                capture.requestStop();
+                if (duplex.active()) applyDuplexActions(duplex.stop());
+                else capture.requestStop();
                 status(window, L"Finishing the recording on disk. Close the window after the take appears.");
                 return 0;
             }
@@ -1225,6 +1355,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         setCaptureBackend(window, false);
         setWasapiInput(window, {});
         if (useWasapiCapture || wasapiInputConfig.input || project != savedProject) return 1;
+        startDuplex(window, 0, 960);
+        if (duplex.active() || capture.active() || audio.state() != Output::State::stopped || project != savedProject) return 1;
         execute(window, newId);
         execute(window, addTrackId);
         SetDlgItemInt(window, beatId, 2, FALSE);

@@ -3,9 +3,9 @@
 This control-thread state machine prepares ENG-01, ENG-04 and REC-01. It
 consumes the [stream clock model](WASAPI_CLOCKS.md) contract through the same
 attempt identifier. Its effects are requests for a future transport adapter.
-The existing GUI continues to run capture and render independently. The
-model runs offline with no device or storage calls. Roll back by reverting
-this increment.
+The GUI uses these effects for the [experimental transport](WASAPI_DUPLEX.md)
+while preserving independent Play and Record. The model runs offline with
+no device or storage calls. Roll back by reverting this increment.
 
 | State | Entry and transition |
 | --- | --- |

@@ -14,7 +14,8 @@ TrackMutes decodeMuteMask(unsigned mask) noexcept {
 
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
                                 SharedRenderConfig config, const std::atomic<unsigned>& muteMask,
-                                std::atomic<unsigned>& played, std::stop_token stop) noexcept {
+                                std::atomic<unsigned>& played, std::stop_token stop,
+                                std::atomic<bool>* ready) noexcept {
     SharedRenderReport report;
     report.requestedFrames = config.requestedFrames;
     const auto fail = [&](RenderError error) {
@@ -72,6 +73,7 @@ SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& m
         fail(error);
         return report;
     }
+    if (ready) ready->store(true, std::memory_order_relaxed);
 
     for (;;) {
         report.stage = mixer.finished() ? RenderStage::drain : RenderStage::stream;

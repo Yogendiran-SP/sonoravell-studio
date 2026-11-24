@@ -171,17 +171,18 @@ std::vector<AudioEndpointInfo> listWasapiCaptureEndpoints() {
 }
 
 WasapiInputReport runWasapiCapture(CaptureSink& sink, WasapiInputConfig config,
-                                   unsigned limit, void* stopEvent) noexcept {
+                                   unsigned limit, void* stopEvent, std::atomic<bool>* ready) noexcept {
     const ComApartment apartment;
     if (FAILED(apartment.result)) {
         CaptureStreamReport report;
+        report.timing.clock = StreamClock{sampleRate, config.stream.attempt};
         report.error = CaptureError::driver;
         report.nativeError = static_cast<std::uint32_t>(apartment.result);
         report.requestedPeriodFrames = config.stream.requestedFrames;
         return {report, std::move(config.input), {}};
     }
     WasapiCaptureEndpoint endpoint(config.input, stopEvent);
-    const auto report = captureShared(endpoint, sink, config.stream, limit);
+    const auto report = captureShared(endpoint, sink, config.stream, limit, ready);
     return {report, std::move(config.input), std::move(endpoint.resolved)};
 }
 }
