@@ -3,7 +3,7 @@ project(SonoravellStudio LANGUAGES CXX)
 
 add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
-  native/duplex_transport.cpp native/loopback_qualification.cpp)
+  native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
@@ -55,6 +55,9 @@ if(BUILD_TESTING)
   add_test(NAME qualify_cli_check COMMAND ${CMAKE_COMMAND}
     -DQUALIFY=$<TARGET_FILE:sonoravell-qualify> -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/qualify_cli_check.cmake)
   set_tests_properties(qualify_cli_check loopback_qualification_check PROPERTIES TIMEOUT 30)
+  add_executable(duplex_qualification_check tests/duplex_qualification_check.cpp)
+  target_link_libraries(duplex_qualification_check PRIVATE sonoravell_engine)
+  add_test(NAME duplex_qualification_check COMMAND duplex_qualification_check)
   if(WIN32)
     add_test(NAME workspace_check COMMAND SonoravellStudio --workspace-check)
   endif()
