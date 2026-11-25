@@ -38,7 +38,7 @@ public:
         if (ready) CloseHandle(ready);
     }
 
-    bool run(PlaybackMixer& mixer, std::atomic<unsigned>& played, unsigned deviceId, std::stop_token stop) {
+    bool run(PlaybackMixer& mixer, std::atomic<std::uint64_t>& played, unsigned deviceId, std::stop_token stop) {
         if (!ready) return false;
         std::stop_callback wakeOnStop(stop, [this] { SetEvent(ready); });
         if (stop.stop_requested()) return true;
@@ -69,13 +69,9 @@ public:
                 if (WaitForSingleObject(ready, INFINITE) != WAIT_OBJECT_0) return false;
                 continue;
             }
-            MMTIME elapsed{};
-            elapsed.wType = TIME_SAMPLES;
-            if (waveOutGetPosition(device, &elapsed, sizeof(elapsed)) == MMSYSERR_NOERROR) {
-                if (elapsed.wType == TIME_SAMPLES) played.store(elapsed.u.sample);
-                if (elapsed.wType == TIME_BYTES) played.store(elapsed.u.cb / (2 * channelCount));
-                if (elapsed.wType == TIME_MS) played.store(elapsed.u.ms * (sampleRate / 1000));
-            }
+            // WHDR_DONE provides a conservative committed playback position.
+            played.fetch_add(buffer.header.dwBufferLength / (sizeof(std::int16_t) * channelCount),
+                             std::memory_order_relaxed);
             // Recycle in playback order even when several buffers completed before we woke.
             oldest = (oldest + 1) % buffers.size();
             --pending;
@@ -100,7 +96,7 @@ public:
     enum class State { stopped, playing, completed, failed };
 
     State state() const { return playbackState.load(); }
-    unsigned framesPlayed() const { return played.load(); }
+    std::uint64_t framesPlayed() const { return played.load(); }
     std::uint32_t meter() const { return peakMeter.load(std::memory_order_relaxed); }
 
     // The UI reads this only after the worker has been joined.
@@ -121,7 +117,7 @@ public:
     void setMixer(const MixerParameters& parameters) noexcept { mixerParameters.publish(parameters); }
 
     void play(std::shared_ptr<const SessionAudio> session, unsigned startFrame, unsigned deviceId,
-              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}) {
+              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, bool loop = false) {
         stop();
         lastUsedWasapi = wasapi.has_value();
         if (wasapi) wasapiRun.reset();
@@ -129,8 +125,8 @@ public:
         playbackState.store(State::playing);
         try {
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
-                                   wasapi = std::move(wasapi), duplex = std::move(duplex)](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters);
+                                   wasapi = std::move(wasapi), duplex = std::move(duplex), loop](std::stop_token stopToken) mutable {
+                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, loop && !duplex);
                 if (wasapi) {
                     wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), played, stopToken,
                                                 duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
@@ -153,7 +149,7 @@ public:
 
 private:
     MixerParameterMailbox mixerParameters;
-    std::atomic<unsigned> played{0};
+    std::atomic<std::uint64_t> played{0};
     std::atomic<std::uint32_t> peakMeter{0};
     std::atomic<State> playbackState{State::stopped};
     bool lastUsedWasapi = false;

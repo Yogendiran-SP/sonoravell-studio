@@ -11,7 +11,7 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 
 | Workspace | What you can do |
 | --- | --- |
-| Transport | Record from the selected Windows input, play, stop, change tempo, and undo or redo edits. Stop finalizes a disk-backed take as a new audio track. |
+| Transport | Record from the selected Windows input, play, pause and resume, seek, loop, stop, change tempo, and undo or redo edits. Stop finalizes a disk-backed take as a new audio track. |
 | Arrange | See MIDI notes and waveform previews. Click a clip to inspect it or the ruler to set the playback start using the selected grid. |
 | Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move, trim, split, duplicate, or delete the selected audio clip. Rename or remove a track. |
 | Browser | Import a PCM WAV, create instrument or audio tracks, or place an Audio Pool source. |

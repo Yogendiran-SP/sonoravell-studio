@@ -78,3 +78,27 @@ preparation time, owned track-buffer bytes, and block p95 and maximum mix
 time. Those measurements omit asset storage and hardware I/O. Dense
 arrangements can still approach the original sample cap, and sparse tiles
 have an index overhead. Synthesis preparation still runs before playback.
+
+## Independent playback transport
+
+ENG-03. Play changes to Pause while independent output is running, and to
+Resume after pausing. Pause closes the current endpoint worker. Resume
+opens the selected endpoint explicitly at the last observed played frame.
+The WinMM position counts completed buffers. WASAPI uses submitted frames
+minus endpoint padding. Both are conservative transport positions, not
+sample-accurate hardware pause. Click the ruler to seek or choose Seek to
+start. Ctrl+Space toggles play and pause. Ctrl+Home seeks to zero.
+
+Choose Loop while playback is stopped or paused. The next independent
+playback wraps at the complete Session end. Smoothing carries through the
+seam. Signals that differ at the seam can click. The engine preserves
+sample order rather than silently crossfading a Session. The stereo WAV
+and experimental duplex continue to play once. Capture still owns Stop
+and retains the existing editing lockout. Loop and cursor state are
+view controls and do not change saved Session or journal formats.
+
+Scripted sample checks cover split hardware buffers, exact wrap order,
+large frame counters, resume position, and one-shot EOF. The Windows
+workspace smoke tests check grid seeking, loop selection, and unchanged
+Session/snapshot state. Physical pause timing and audible seam quality
+are hardware acceptance work.

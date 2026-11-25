@@ -11,6 +11,7 @@
 #include "clip_edit.hpp"
 #include "edit_history.hpp"
 #include "session.hpp"
+#include "playback_position.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
 #include "windows_capture.hpp"
@@ -48,7 +49,7 @@ enum ControlId {
     trackNameId, renameTrackId, duplicateTrackId, trackUpId, trackDownId, addAudioTrackId, clipRangeId,
     gridBeatId, gridQuarterId, gridSixteenthId, gridOffId, placeOnTrackId,
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
-    beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId
+    beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, loopId, rewindId
 };
 
 Project project = afterHoursProject();
@@ -114,6 +115,8 @@ constexpr std::array workspaceLayouts{
     WorkspaceLayout{false, false, true}  // Mix
 };
 unsigned playFrom = 0;
+bool paused = false;
+bool loopPlayback = false;
 std::uint32_t totalFrames = sessionFrames(project);
 
 std::wstring wide(const std::string& value) {
@@ -178,7 +181,8 @@ void layout(HWND window) {
     place(tempoLabelId, 350, 53, 82, 20);
     place(tempoId, 430, 47, 52, 26);
     place(tempoApplyId, 490, 47, 57, 28);
-    const int queryWidth = std::clamp(width - 718, 52, 143);
+    const int queryWidth = std::clamp(width - 770, 52, 143);
+    place(loopId, 619, 47, 50, 28);
     place(deviceId, 549, 47, 66, 28);
     place(queryId, width - 96 - queryWidth, 47, queryWidth, 27);
     place(commandId, width - 91, 47, 78, 28);
@@ -396,7 +400,7 @@ void drawArrangement(HWND window) {
         lastLabel = x;
     }
     const bool playing = audio.state() == Output::State::playing;
-    const int x = xOf(playFrom + (playing ? audio.framesPlayed() : 0));
+    const int x = xOf(playbackFrame(totalFrames, playFrom, playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active()));
     const RECT playhead{x, ruler.top, x + (playing ? 2 : 1), gridTop + height};
     fill(dc, playhead, RGB(220, 105, 39));
     RestoreDC(dc, savedDc);
@@ -502,7 +506,15 @@ void refreshTrack(HWND window) {
     showInspectorEventControls(window);
 }
 
+void refreshTransport(HWND window) {
+    const bool playing = audio.state() == Output::State::playing;
+    SetDlgItemTextW(window, playId, playing && !capture.active() ? L"Pause" : paused ? L"Resume" : L"Play");
+    CheckDlgButton(window, loopId, loopPlayback ? BST_CHECKED : BST_UNCHECKED);
+    EnableWindow(field(window, loopId), !capture.active() && !playing);
+}
+
 void refresh(HWND window, int index) {
+    refreshTransport(window);
     refreshWaveforms();
     const auto title = wide(project.name) + (dirty ? L" *" : L"");
     SetDlgItemTextW(window, titleId, title.c_str());
@@ -602,6 +614,7 @@ void applyEditedProject(HWND window, int index, EditImpact impact) {
     if (impact == EditImpact::rebuildAudio) {
         audio.stop();
         prepared.reset();
+        paused = false;
     }
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
@@ -630,6 +643,7 @@ void installProject(HWND window, Project next) {
     audio.stop();
     prepared.reset();
     project = std::move(next);
+    paused = false;
     playFrom = 0;
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
@@ -726,7 +740,7 @@ void showCommands(HWND window) {
     const auto query = lowercase(queryText);
     for (const auto& entry : {std::pair<int, const wchar_t*>{newId, L"New Session"}, {demoId, L"Load demo"},
          {openId, L"Open Session..."}, {deviceId, L"Audio devices..."}, {restoreSessionId, L"Restore Session checkpoint..."}, {saveId, L"Save Session As..."}, {importId, L"Import WAV..."},
-         {addTrackId, L"Add instrument"}, {placeId, L"Place audio source on new track"}, {placeOnTrackId, L"Place audio source on selected track"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play"}, {stopId, L"Stop"},
+         {addTrackId, L"Add instrument"}, {placeId, L"Place audio source on new track"}, {placeOnTrackId, L"Place audio source on selected track"}, {recoverId, L"Recover recorded take..."}, {recordId, L"Record"}, {playId, L"Play / Pause / Resume"}, {stopId, L"Stop"}, {loopId, L"Toggle loop playback"}, {rewindId, L"Seek to start"},
         {startDuplexId, L"Record with playback (experimental)"}, {duplexReportId, L"Last experimental duplex diagnostics..."},
          {exportId, L"Export WAV..."}, {undoId, L"Undo edit"}, {redoId, L"Redo edit"}, {focusId, L"Toggle Focus"}, {noteId, L"Add MIDI note"},
          {updateNoteId, L"Update MIDI note"}, {deleteNoteId, L"Delete MIDI note"}, {moveId, L"Move audio clip"},
@@ -1060,10 +1074,13 @@ void showAudioDevices(HWND window) {
     }
 }
 
-void startPlayback() {
+void startPlayback(HWND window) {
     audio.setMixer(mixerParameters(project));
-    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig);
-    else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
+    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback);
+    else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice),
+                    {}, {}, loopPlayback);
+    paused = false;
+    refreshTransport(window);
 }
 
 void applyDuplexActions(const DuplexActions& actions) {
@@ -1082,6 +1099,7 @@ void startDuplex(HWND window, unsigned tick, unsigned capacity) {
     audio.stop();
     const bool captureLaunched = capture.startDuplex(capacity, tick, wasapiInputConfig, duplex, notices);
     duplexProgress = {notices->attempt(), tick};
+    paused = false;
     playFrom = frameAtTick(tick, project.tempo);
     if (captureLaunched) {
         try {
@@ -1222,6 +1240,8 @@ void execute(HWND window, int id) {
             status(window, L"Finishing the recording on disk...");
         } else {
             audio.stop();
+            paused = false;
+            refreshTransport(window);
             const auto rect = arrangeRect(window);
             InvalidateRect(window, &rect, FALSE);
             status(window, L"Stopped.");
@@ -1229,6 +1249,18 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == loopId) {
+        if (audio.state() != Output::State::playing) loopPlayback = !loopPlayback;
+        refreshTransport(window);
+        return;
+    }
+    if (id == rewindId) {
+        playFrom = 0;
+        if (audio.state() == Output::State::playing) startPlayback(window);
+        const auto panel = arrangeRect(window);
+        InvalidateRect(window, &panel, FALSE);
+        return;
+    }
     if (id == duplexReportId) {
         if (lastDuplexDiagnostics.empty()) status(window, L"Finish an experimental duplex take to view diagnostics.");
         else MessageBoxW(window, lastDuplexDiagnostics.c_str(), L"Experimental duplex diagnostics", MB_OK | MB_ICONINFORMATION);
@@ -1280,7 +1312,17 @@ void execute(HWND window, int id) {
             status(window, L"Exported 48 kHz stereo WAV.");
         }
     } else if (id == playId) {
-        startPlayback();
+        if (audio.state() == Output::State::playing) {
+            audio.stop();
+            playFrom = std::min(totalFrames - 1, playbackFrame(totalFrames, playFrom, audio.framesPlayed(), loopPlayback));
+            paused = true;
+            refreshTransport(window);
+            const auto panel = arrangeRect(window);
+            InvalidateRect(window, &panel, FALSE);
+            status(window, L"Paused.");
+            return;
+        }
+        startPlayback(window);
         status(window, L"Playing Session.");
     } else if (id == recoverId) {
         auto directory = takeRecoveryDirectory();
@@ -1297,6 +1339,7 @@ void execute(HWND window, int id) {
         if (!capacity) throw std::runtime_error("No recording capacity at that beat. Choose an earlier start or a smaller Session.");
         if (id == startDuplexId) { startDuplex(window, takeTick, capacity); return; }
         audio.stop();
+        paused = false;
         if (useWasapiCapture) capture.start(capacity, takeTick, WAVE_MAPPER, wasapiInputConfig);
         else capture.start(capacity, takeTick, resolveWindowsAudioEndpoint(AudioDirection::input, inputChoice));
         refresh(window, selectedTrack(window));
@@ -1467,6 +1510,7 @@ void createWorkspace(HWND window) {
     addControl(window, mixerId, L"BUTTON", L"Mixer  /  Selected track", BS_GROUPBOX);
     addControl(window, volumeLabelId, L"STATIC", L"Volume (%)");
     addControl(window, volumeId, L"EDIT", L"100", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, loopId, L"BUTTON", L"Loop", WS_TABSTOP | BS_CHECKBOX);
     addControl(window, muteId, L"BUTTON", L"Mute", WS_TABSTOP | BS_AUTOCHECKBOX);
     addControl(window, soloId, L"BUTTON", L"Solo", WS_TABSTOP | BS_AUTOCHECKBOX);
     addControl(window, panLabelId, L"STATIC", L"Pan");
@@ -1515,7 +1559,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 const auto target = (static_cast<std::uint64_t>(x - left) * endTick + width / 2) / width;
                 const auto ticks = snapTimelineTick(static_cast<unsigned>(target), endTick, gridSteps[gridIndex]);
                 playFrom = std::min(totalFrames - 1, frameAtTick(ticks, project.tempo));
-                if (audio.state() == Output::State::playing) startPlayback();
+                if (audio.state() == Output::State::playing) startPlayback(window);
                 InvalidateRect(window, &panel, FALSE);
             } else if (x >= panel.left && x < panel.right && y >= 0 && y < panel.bottom - panel.top - 58) {
                 const int index = y / arrangementRowHeight(panel);
@@ -1566,6 +1610,8 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             const auto state = audio.state();
             if (state == Output::State::completed || state == Output::State::failed) {
                 audio.stop();
+                paused = false;
+                refreshTransport(window);
                 if (state == Output::State::completed) status(window, L"Playback complete.");
                 else if (const auto& report = audio.lastWasapiRun(); audio.lastPlaybackUsedWasapi() && report) {
                     status(window, renderErrorText(report->stream.error));
@@ -1720,13 +1766,21 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const bool mixerOk = project.tracks[1].pan == -50 && project.masterVolume == 65 && project.tracks[1].solo;
         execute(window, undoId);
         const bool soloUndoOk = !project.tracks[1].solo && project.masterVolume == 65 && prepared == beforeMixer;
+        const auto beforeTransport = project;
+        execute(window, loopId);
+        const bool toggled = loopPlayback && IsDlgButtonChecked(window, loopId) == BST_CHECKED;
+        execute(window, rewindId);
+        const bool rewound = playFrom == 0 && project == beforeTransport && prepared == beforeMixer;
+        execute(window, loopId);
+        const bool transportOk = toggled && rewound && !loopPlayback;
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
-                         {FVIRTKEY | FCONTROL | FSHIFT, 'Z', redoId}, {FVIRTKEY | FCONTROL, 'O', openId},
+                         {FVIRTKEY | FCONTROL | FSHIFT, 'Z', redoId}, {FVIRTKEY | FCONTROL, VK_SPACE, playId},
+                         {FVIRTKEY | FCONTROL, VK_HOME, rewindId}, {FVIRTKEY | FCONTROL, 'O', openId},
                          {FVIRTKEY | FCONTROL | FSHIFT, 'S', saveId}, {FVIRTKEY | FCONTROL, 'F', queryFocusId}};
     const auto accelerator = CreateAcceleratorTableW(shortcuts, static_cast<int>(std::size(shortcuts)));
     MSG message{};
