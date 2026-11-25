@@ -3,7 +3,7 @@ project(SonoravellStudio LANGUAGES CXX)
 
 add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
-  native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp)
+  native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp native/clip_edit.cpp)
 target_include_directories(sonoravell_engine PUBLIC native)
 target_compile_features(sonoravell_engine PUBLIC cxx_std_20)
 
@@ -30,6 +30,9 @@ if(BUILD_TESTING)
   add_executable(project_check tests/project_check.cpp)
   target_link_libraries(project_check PRIVATE sonoravell_engine)
   add_test(NAME project_check COMMAND project_check)
+  add_executable(clip_edit_check tests/clip_edit_check.cpp)
+  target_link_libraries(clip_edit_check PRIVATE sonoravell_engine)
+  add_test(NAME clip_edit_check COMMAND clip_edit_check)
   add_executable(take_check tests/take_check.cpp)
   target_link_libraries(take_check PRIVATE sonoravell_engine Threads::Threads)
   add_test(NAME take_check COMMAND take_check)

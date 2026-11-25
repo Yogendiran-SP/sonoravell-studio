@@ -220,7 +220,7 @@ void checkConcurrentWorkers(const std::filesystem::path& dir, bool recordFirst) 
           "The recording prefix and placement must survive output loss.");
     auto project = Project{};
     project.assets.push_back({1, "Take", take.stereo});
-    project.tracks.push_back({1, "Take", Instrument::audio, false, 100, {}, {{1, take.startTick}}});
+    project.tracks.push_back({1, "Take", Instrument::audio, false, 100, {}, {wholeAudioClip(1, project.assets.front(), take.startTick)}});
     const auto original = dir / "original.sonora";
     const auto saved = dir / (recordFirst ? "capture-first.sonora" : "render-first.sonora");
     saveProject(saved, project);

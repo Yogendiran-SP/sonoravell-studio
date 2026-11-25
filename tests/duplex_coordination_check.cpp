@@ -171,7 +171,7 @@ void checkRecoverablePrefix() {
 
     auto saved = original;
     saved.assets.push_back({1, "Recovered", recovered.stereo});
-    saved.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {{1, recovered.startTick}}});
+    saved.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {wholeAudioClip(1, saved.assets.front(), recovered.startTick)}});
     const auto savedPath = dir / "recovered.sonora";
     saveProject(savedPath, saved);
     check(openProject(savedPath) == saved, "Recovered capture must survive Session save and reopen.");

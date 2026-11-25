@@ -8,6 +8,7 @@
 #include <random>
 #include <stdexcept>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 
 #ifdef _WIN32
@@ -21,8 +22,7 @@
 
 namespace sonoravell {
 namespace {
-constexpr std::uint32_t schemaVersion = 1;
-constexpr std::uint32_t maxTick = maxBars * beatsPerBar * ticksPerBeat;
+constexpr std::uint32_t schemaVersion = 2;
 constexpr std::uint32_t maxEventsPerTrack = 16384;
 constexpr std::uint64_t maxMixSamples = 64ull * 1024 * 1024; // 256 MiB of float track audio.
 constexpr std::size_t maxNameLength = 200;
@@ -114,8 +114,11 @@ void writeProject(std::ostream& file, const Project& project) {
         }
         writeNumber(file, static_cast<std::uint32_t>(track.clips.size()));
         for (const auto& clip : track.clips) {
+            writeNumber(file, clip.id);
             writeNumber(file, clip.assetId);
             writeNumber(file, clip.tick);
+            writeNumber(file, clip.sourceFrame);
+            writeNumber(file, clip.frameCount);
         }
     }
     writeNumber(file, static_cast<std::uint32_t>(project.assets.size()));
@@ -129,13 +132,15 @@ void writeProject(std::ostream& file, const Project& project) {
 
 Project readProject(std::istream& file) {
     require(readTag<8>(file) == signature, "This is not a native Sonoravell Session.");
-    require(readNumber(file) == schemaVersion, "Unsupported Sonoravell Session version.");
+    const auto version = readNumber(file);
+    require(version == 1 || version == schemaVersion, "Unsupported Sonoravell Session version.");
     Project project;
     project.name = readName(file);
     project.tempo = readNumber(file);
     project.bars = readNumber(file);
     const auto trackCount = readNumber(file);
     require(trackCount <= maxTracks, "Too many tracks in the Session.");
+    std::uint32_t legacyClipId = 0;
     for (std::uint32_t i = 0; i < trackCount; ++i) {
         const auto id = readNumber(file);
         auto name = readName(file);
@@ -151,7 +156,10 @@ Project readProject(std::istream& file) {
         }
         const auto clips = readNumber(file);
         require(clips <= maxEventsPerTrack, "Too many audio clips in the track.");
-        for (std::uint32_t n = 0; n < clips; ++n) track.clips.push_back({readNumber(file), readNumber(file)});
+        for (std::uint32_t n = 0; n < clips; ++n) {
+            if (version == 1) track.clips.push_back({++legacyClipId, readNumber(file), readNumber(file), 0, 0});
+            else track.clips.push_back({readNumber(file), readNumber(file), readNumber(file), readNumber(file), readNumber(file)});
+        }
         project.tracks.push_back(std::move(track));
     }
     const auto assets = readNumber(file);
@@ -168,6 +176,11 @@ Project readProject(std::istream& file) {
         readPcm(file, asset.stereo);
     }
     require(file.peek() == std::char_traits<char>::eof() && !file.bad(), "Unexpected extra or unreadable Session data.");
+    if (version == 1) {
+        for (auto& track : project.tracks) {
+            for (auto& clip : track.clips) clip = wholeAudioClip(clip.id, findAsset(project, clip.assetId), clip.tick);
+        }
+    }
     validateProject(project);
     return project;
 }
@@ -220,14 +233,32 @@ void commitSave(const std::filesystem::path& temporary, const std::filesystem::p
 }
 
 std::uint32_t frameAtTick(std::uint32_t tick, unsigned tempo) {
+    require(tempo != 0, "Cannot convert a timeline position at zero tempo.");
     const auto divisor = static_cast<std::uint64_t>(tempo) * ticksPerBeat;
-    return static_cast<std::uint32_t>((static_cast<std::uint64_t>(tick) * 60 * sampleRate + divisor / 2) / divisor);
+    const auto frame = (static_cast<std::uint64_t>(tick) * 60 * sampleRate + divisor / 2) / divisor;
+    require(frame <= std::numeric_limits<std::uint32_t>::max(), "Timeline position exceeds the supported frame range.");
+    return static_cast<std::uint32_t>(frame);
 }
 
 const AudioAsset& findAsset(const Project& project, std::uint32_t id) {
     const auto found = std::ranges::find(project.assets, id, &AudioAsset::id);
     require(found != project.assets.end(), "A clip refers to a missing audio source.");
     return *found;
+}
+
+AudioClip wholeAudioClip(std::uint32_t id, const AudioAsset& asset, std::uint32_t tick) {
+    require(asset.stereo.size() <= maxAssetSamples && asset.stereo.size() % channelCount == 0,
+            "Invalid audio source size.");
+    return {id, asset.id, tick, 0, static_cast<std::uint32_t>(asset.stereo.size() / channelCount)};
+}
+
+std::uint32_t newAudioClipId(const Project& project) {
+    std::uint32_t maximum = 0;
+    for (const auto& track : project.tracks) {
+        for (const auto& clip : track.clips) maximum = std::max(maximum, clip.id);
+    }
+    require(maximum < std::numeric_limits<std::uint32_t>::max(), "No new audio clip ID is available.");
+    return maximum + 1;
 }
 
 std::uint32_t sessionFrames(const Project& project) {
@@ -237,9 +268,9 @@ std::uint32_t sessionFrames(const Project& project) {
             frames = std::max(frames, frameAtTick(note.tick + note.length, project.tempo));
         }
         for (const auto& clip : track.clips) {
-            const auto& asset = findAsset(project, clip.assetId);
-            const auto end = frameAtTick(clip.tick, project.tempo) + static_cast<std::uint32_t>(asset.stereo.size() / channelCount);
-            frames = std::max(frames, end);
+            const auto end = static_cast<std::uint64_t>(frameAtTick(clip.tick, project.tempo)) + clip.frameCount;
+            require(end <= std::numeric_limits<std::uint32_t>::max(), "Audio clip end exceeds the supported frame range.");
+            frames = std::max(frames, static_cast<std::uint32_t>(end));
         }
     }
     return frames;
@@ -252,7 +283,7 @@ std::uint64_t renderWork(const Project& project) {
         for (const auto& note : track.notes) {
             frames += frameAtTick(note.tick + note.length, project.tempo) - frameAtTick(note.tick, project.tempo);
         }
-        for (const auto& clip : track.clips) frames += findAsset(project, clip.assetId).stereo.size() / channelCount;
+        for (const auto& clip : track.clips) frames += clip.frameCount;
     }
     return frames;
 }
@@ -260,7 +291,7 @@ std::uint64_t renderWork(const Project& project) {
 
 std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick) {
     validateProject(project);
-    if (project.tracks.size() >= maxTracks || project.assets.size() >= maxAssets || tick >= maxTick) return 0;
+    if (project.tracks.size() >= maxTracks || project.assets.size() >= maxAssets || tick >= maxTimelineTick) return 0;
     const auto frameLimit = maxMixSamples / (channelCount * (project.tracks.size() + 1));
     const auto start = frameAtTick(tick, project.tempo);
     if (sessionFrames(project) > frameLimit || start >= frameLimit) return 0;
@@ -289,6 +320,7 @@ void validateProject(const Project& project) {
         require(totalSamples <= maxProjectSamples, "The Session has too much embedded audio.");
     }
     std::vector<std::uint32_t> trackIds;
+    std::unordered_set<std::uint32_t> clipIds;
     for (const auto& track : project.tracks) {
         validateName(track.name);
         require(track.id && std::ranges::find(trackIds, track.id) == trackIds.end(), "Duplicate or invalid track ID.");
@@ -298,11 +330,15 @@ void validateProject(const Project& project) {
         require(track.instrument == Instrument::audio ? track.notes.empty() : track.clips.empty(),
                 "Track events do not match its type.");
         for (const auto& note : track.notes) {
-            require(note.tick < maxTick && note.length && note.length <= maxTick - note.tick &&
+            require(note.tick < maxTimelineTick && note.length && note.length <= maxTimelineTick - note.tick &&
                     note.pitch <= 127 && note.velocity && note.velocity <= 127, "Invalid MIDI note.");
         }
         for (const auto& clip : track.clips) {
-            require(clip.tick < maxTick, "Audio clip is outside the supported timeline.");
+            require(clip.id && clipIds.insert(clip.id).second, "Duplicate or invalid audio clip ID.");
+            require(clip.tick < maxTimelineTick, "Audio clip is outside the supported timeline.");
+            const auto frames = findAsset(project, clip.assetId).stereo.size() / channelCount;
+            require(clip.frameCount && clip.sourceFrame < frames && clip.frameCount <= frames - clip.sourceFrame,
+                    "Audio clip range is outside its source.");
         }
     }
     require(renderWork(project) <= maxMixSamples, "Too many overlapping audio or MIDI events for this preview.");
@@ -320,6 +356,14 @@ Project openProject(const std::filesystem::path& path) {
 void saveProject(const std::filesystem::path& path, const Project& project) {
     validateProject(project);
     const auto destination = std::filesystem::absolute(path);
+    if (std::filesystem::is_regular_file(destination)) {
+        std::ifstream existing(destination, std::ios::binary);
+        require(static_cast<bool>(existing), "Could not check the existing Session version.");
+        std::array<char, signature.size()> header{};
+        if (existing.read(header.data(), header.size()) && header == signature) {
+            require(readNumber(existing) == schemaVersion, "Save to a new filename to preserve the existing Session version.");
+        }
+    }
     const SaveStaging staging(destination);
     const auto temporary = staging.path / "session";
     std::ofstream file(temporary, std::ios::binary);

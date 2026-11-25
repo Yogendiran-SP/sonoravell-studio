@@ -13,6 +13,7 @@ inline constexpr unsigned ticksPerBeat = 960;
 inline constexpr unsigned beatsPerBar = 4;
 inline constexpr unsigned maxTracks = 16;
 inline constexpr unsigned maxBars = 128;
+inline constexpr unsigned maxTimelineTick = maxBars * beatsPerBar * ticksPerBeat;
 inline constexpr unsigned maxAssets = 64;
 inline constexpr unsigned maxAssetSamples = sampleRate * channelCount * 120;
 inline constexpr unsigned maxProjectSamples = maxAssetSamples * 2;
@@ -36,8 +37,11 @@ struct AudioAsset {
 };
 
 struct AudioClip {
+    std::uint32_t id;
     std::uint32_t assetId;
     std::uint32_t tick;
+    std::uint32_t sourceFrame;
+    std::uint32_t frameCount;
     bool operator==(const AudioClip&) const = default;
 };
 
@@ -65,6 +69,8 @@ Project afterHoursProject();
 std::uint32_t frameAtTick(std::uint32_t tick, unsigned tempo);
 std::uint32_t sessionFrames(const Project& project);
 const AudioAsset& findAsset(const Project& project, std::uint32_t id);
+AudioClip wholeAudioClip(std::uint32_t id, const AudioAsset& asset, std::uint32_t tick);
+std::uint32_t newAudioClipId(const Project& project);
 void validateProject(const Project& project);
 std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick);
 AudioAsset readWave(std::istream& input, std::uint32_t id, std::string name, bool requireSessionRate = false);

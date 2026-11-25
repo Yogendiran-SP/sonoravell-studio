@@ -109,7 +109,7 @@ int main() {
     Samples stereo(sessionFrames(project) * channelCount);
     for (unsigned i = 0; i < stereo.size(); ++i) stereo[i] = static_cast<std::int16_t>(static_cast<int>(i % 121) - 60);
     project.assets.push_back({1, "Reference", std::move(stereo)});
-    project.tracks.push_back({1, "Reference", Instrument::audio, false, 100, {}, {{1, 0}}});
+    project.tracks.push_back({1, "Reference", Instrument::audio, false, 100, {}, {wholeAudioClip(1, project.assets.front(), 0)}});
     const SessionAudio session(project);
     const auto expected = session.render({});
     const auto first = sessionFrames(project) - 9;
