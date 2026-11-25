@@ -47,3 +47,24 @@ Acceptance requires sample-exact split and overlap fixtures, rejected edits
 leaving metadata and PCM unchanged, deterministic v1 migration, v2
 save/reopen, named-file preservation, and recovery/autosave regression tests.
 Use an older application with the original v1 copy if rollback is needed.
+
+## Native editing and command history
+
+Select an audio track and a clip in the Inspector. The beat field sets the
+target for Move, Split, Duplicate, Trim start, and Trim end. Select Delete
+audio clip to remove the chosen instance from the timeline. Track deletion
+and clip deletion leave their existing sources in the Audio Pool.
+
+Undo and Redo, also available through Ctrl+Z and Ctrl+Y, retain 24 commands
+per open Session. Commands edit and validate a draft before swapping it into
+place. Undo/redo swaps validated state and never rewrites PCM. Audio Pool
+payloads are immutable and shared between revisions. An invalid or unchanged
+draft retains the redo branch. A new committed command after Undo discards
+that branch. Opening a Session or restoring a checkpoint starts fresh history.
+
+Move, trim, split, duplicate, delete, track, MIDI note, tempo, and available
+mixer changes go through the same history. Structural changes and level
+edits stop playback before replacing its prepared audio. Mute updates and
+their undo/redo still use the active worker's atomic mute controls. No edit
+or revision work occurs on the audio thread. Recording continues to lock
+editing until its journal has settled.

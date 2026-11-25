@@ -125,8 +125,8 @@ void writeProject(std::ostream& file, const Project& project) {
     for (const auto& asset : project.assets) {
         writeNumber(file, asset.id);
         writeName(file, asset.name);
-        writeNumber(file, static_cast<std::uint32_t>(asset.stereo.size()));
-        writePcm(file, asset.stereo);
+        writeNumber(file, static_cast<std::uint32_t>(asset.stereo().size()));
+        writePcm(file, asset.stereo());
     }
 }
 
@@ -172,8 +172,9 @@ Project readProject(std::istream& file) {
         require(samples && samples <= maxAssetSamples && samples % channelCount == 0 &&
                 totalSamples + samples <= maxProjectSamples, "Invalid embedded audio size.");
         totalSamples += samples;
-        auto& asset = project.assets.emplace_back(AudioAsset{id, std::move(name), Samples(samples)});
-        readPcm(file, asset.stereo);
+        Samples audio(samples);
+        readPcm(file, audio);
+        project.assets.emplace_back(id, std::move(name), std::move(audio));
     }
     require(file.peek() == std::char_traits<char>::eof() && !file.bad(), "Unexpected extra or unreadable Session data.");
     if (version == 1) {
@@ -232,6 +233,18 @@ void commitSave(const std::filesystem::path& temporary, const std::filesystem::p
 }
 }
 
+AudioAsset::AudioAsset(std::uint32_t id, std::string name, Samples stereo)
+    : id(id), name(std::move(name)), pcm(std::make_shared<const Samples>(std::move(stereo))) {}
+
+const Samples& AudioAsset::stereo() const noexcept {
+    static const Samples empty;
+    return pcm ? *pcm : empty;
+}
+
+bool AudioAsset::operator==(const AudioAsset& other) const {
+    return id == other.id && name == other.name && (pcm == other.pcm || stereo() == other.stereo());
+}
+
 std::uint32_t frameAtTick(std::uint32_t tick, unsigned tempo) {
     require(tempo != 0, "Cannot convert a timeline position at zero tempo.");
     const auto divisor = static_cast<std::uint64_t>(tempo) * ticksPerBeat;
@@ -247,9 +260,9 @@ const AudioAsset& findAsset(const Project& project, std::uint32_t id) {
 }
 
 AudioClip wholeAudioClip(std::uint32_t id, const AudioAsset& asset, std::uint32_t tick) {
-    require(asset.stereo.size() <= maxAssetSamples && asset.stereo.size() % channelCount == 0,
+    require(asset.stereo().size() <= maxAssetSamples && asset.stereo().size() % channelCount == 0,
             "Invalid audio source size.");
-    return {id, asset.id, tick, 0, static_cast<std::uint32_t>(asset.stereo.size() / channelCount)};
+    return {id, asset.id, tick, 0, static_cast<std::uint32_t>(asset.stereo().size() / channelCount)};
 }
 
 std::uint32_t newAudioClipId(const Project& project) {
@@ -296,7 +309,7 @@ std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick) {
     const auto start = frameAtTick(tick, project.tempo);
     if (sessionFrames(project) > frameLimit || start >= frameLimit) return 0;
     std::size_t remainingSamples = maxProjectSamples;
-    for (const auto& source : project.assets) remainingSamples -= source.stereo.size();
+    for (const auto& source : project.assets) remainingSamples -= source.stereo().size();
     return static_cast<std::uint32_t>(std::min<std::uint64_t>({
         frameLimit - start, maxMixSamples - renderWork(project),
         remainingSamples / channelCount, maxAssetSamples / channelCount
@@ -314,9 +327,9 @@ void validateProject(const Project& project) {
         validateName(asset.name);
         require(asset.id && std::ranges::find(assetIds, asset.id) == assetIds.end(), "Duplicate or invalid audio source ID.");
         assetIds.push_back(asset.id);
-        require(!asset.stereo.empty() && asset.stereo.size() <= maxAssetSamples && asset.stereo.size() % channelCount == 0,
+        require(!asset.stereo().empty() && asset.stereo().size() <= maxAssetSamples && asset.stereo().size() % channelCount == 0,
                 "Invalid embedded audio size.");
-        totalSamples += asset.stereo.size();
+        totalSamples += asset.stereo().size();
         require(totalSamples <= maxProjectSamples, "The Session has too much embedded audio.");
     }
     std::vector<std::uint32_t> trackIds;
@@ -336,7 +349,7 @@ void validateProject(const Project& project) {
         for (const auto& clip : track.clips) {
             require(clip.id && clipIds.insert(clip.id).second, "Duplicate or invalid audio clip ID.");
             require(clip.tick < maxTimelineTick, "Audio clip is outside the supported timeline.");
-            const auto frames = findAsset(project, clip.assetId).stereo.size() / channelCount;
+            const auto frames = findAsset(project, clip.assetId).stereo().size() / channelCount;
             require(clip.frameCount && clip.sourceFrame < frames && clip.frameCount <= frames - clip.sourceFrame,
                     "Audio clip range is outside its source.");
         }

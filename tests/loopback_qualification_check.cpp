@@ -51,11 +51,11 @@ int main() {
         validateProject(project);
         check(project.tracks.size() == 1 && project.tracks[0].clips[0].tick == 0 &&
               sessionFrames(project) > qualificationFrames, "Reference Session needs a frame-zero clip and capture tail.");
-        const auto& reference = project.assets.front().stereo;
-        check(reference == makeQualificationSession().assets.front().stereo, "Reference PCM must be reproducible.");
+        const auto& reference = project.assets.front().stereo();
+        check(reference == makeQualificationSession().assets.front().stereo(), "Reference PCM must be reproducible.");
         std::stringstream wave;
         writeWave(wave, reference);
-        check(readWave(wave, 1, "Reference", true).stereo == reference, "Reference WAV must round-trip without conversion.");
+        check(readWave(wave, 1, "Reference", true).stereo() == reference, "Reference WAV must round-trip without conversion.");
         auto wrongRate = wave.str();
         // 44100 Hz and 176400 bytes/s, little endian. The import API can
         // resample that rate, while the qualification path must reject it.

@@ -71,7 +71,7 @@ SessionAudio::SessionAudio(const Project& project) {
         samples.resize(sampleCount);
         const double volume = track.volume / 100.;
         for (const auto& clip : track.clips) {
-            const auto& audio = findAsset(project, clip.assetId).stereo;
+            const auto& audio = findAsset(project, clip.assetId).stereo();
             const auto start = static_cast<std::size_t>(frameAtTick(clip.tick, project.tempo)) * channelCount;
             const auto source = static_cast<std::size_t>(clip.sourceFrame) * channelCount;
             const auto count = static_cast<std::size_t>(clip.frameCount) * channelCount;
