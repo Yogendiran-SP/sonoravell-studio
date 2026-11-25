@@ -113,10 +113,10 @@ int main() {
     const SessionAudio session(project);
     const auto expected = session.render({});
     const auto first = sessionFrames(project) - 9;
-    std::atomic<unsigned> mutes{0}, played{0};
+    std::atomic<unsigned> played{0};
     const auto run = [&](Device& d, std::stop_token stop = {}) {
         PlaybackMixer mixer(session, {}, first);
-        return renderShared(d, mixer, {256}, mutes, played, stop);
+        return renderShared(d, mixer, {256}, played, stop);
     };
 
     Device device;

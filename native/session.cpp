@@ -53,17 +53,20 @@ Project afterHoursProject() {
     return project;
 }
 
-TrackMutes trackMutes(const Project& project) {
-    TrackMutes muted{};
+MixerParameters mixerParameters(const Project& project) noexcept {
+    MixerParameters parameters;
+    parameters.master = project.masterVolume / 100.;
     const bool soloed = std::ranges::any_of(project.tracks, &Track::solo);
-    for (std::size_t index = 0; index < project.tracks.size(); ++index) {
+    for (std::size_t index = 0; index < std::min(project.tracks.size(), parameters.tracks.size()); ++index) {
         const auto& track = project.tracks[index];
-        muted[index] = track.muted || (soloed && !track.solo);
+        const double volume = track.muted || (soloed && !track.solo) ? 0. : track.volume / 100.;
+        parameters.tracks[index] = {volume * (100 - std::max(track.pan, 0)) / 100.,
+                                    volume * (100 + std::min(track.pan, 0)) / 100.};
     }
-    return muted;
+    return parameters;
 }
 
-SessionAudio::SessionAudio(const Project& project) : masterGain(project.masterVolume / 100.) {
+SessionAudio::SessionAudio(const Project& project) {
     validateProject(project);
     constexpr double tau = 2 * std::numbers::pi;
     constexpr double voiceBalance[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}, {1, 1}};
@@ -73,23 +76,20 @@ SessionAudio::SessionAudio(const Project& project) : masterGain(project.masterVo
         const auto& track = project.tracks[index];
         auto& samples = tracks[index];
         samples.resize(sampleCount);
-        const double volume = track.volume / 100.;
-        const std::array balance{(100 - std::max(track.pan, 0)) / 100.,
-                                 (100 + std::min(track.pan, 0)) / 100.};
         for (const auto& clip : track.clips) {
             const auto& audio = findAsset(project, clip.assetId).stereo();
             const auto start = static_cast<std::size_t>(frameAtTick(clip.tick, project.tempo)) * channelCount;
             const auto source = static_cast<std::size_t>(clip.sourceFrame) * channelCount;
             const auto count = static_cast<std::size_t>(clip.frameCount) * channelCount;
             for (std::size_t sample = 0; sample < count; ++sample) {
-                samples[start + sample] += static_cast<float>(audio[source + sample] * (volume / 32768.) * balance[sample % channelCount]);
+                samples[start + sample] += static_cast<float>(audio[source + sample] / 32768.);
             }
         }
         for (const auto& note : track.notes) {
             const auto start = frameAtTick(note.tick, project.tempo);
             const auto length = frameAtTick(note.tick + note.length, project.tempo) - start;
             const double frequency = 440 * std::exp2((note.pitch - 69) / 12.0);
-            const double level = .14 * note.velocity / 127 * volume;
+            const double level = .14 * note.velocity / 127;
             std::uint32_t noiseState = 0x8c31274u + start;
             for (std::uint32_t frame = 0; frame < length; ++frame) {
                 const double time = static_cast<double>(frame) / sampleRate;
@@ -107,45 +107,67 @@ SessionAudio::SessionAudio(const Project& project) : masterGain(project.masterVo
                 }
                 for (unsigned channel = 0; channel < channelCount; ++channel) {
                     samples[(start + frame) * channelCount + channel] +=
-                        static_cast<float>(level * voice * envelope * voiceBalance[static_cast<unsigned>(track.instrument)][channel] * balance[channel]);
+                        static_cast<float>(level * voice * envelope * voiceBalance[static_cast<unsigned>(track.instrument)][channel]);
                 }
             }
         }
     }
 }
 
-Samples SessionAudio::render(const TrackMutes& muted) const {
+Samples SessionAudio::render(const MixerParameters& parameters) const {
     Samples samples(sampleCount);
-    PlaybackMixer(*this, muted).read(samples, muted);
+    PlaybackMixer(*this, parameters).read(samples);
     return samples;
 }
 
 static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
 
-PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame,
-                             std::atomic<std::uint32_t>* peakMeter)
-    : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount), peakMeter(peakMeter) {
-    for (std::size_t track = 0; track < gains.size(); ++track) {
-        gains[track] = initialMutes[track] ? 0 : muteRampFrames;
+void PlaybackMixer::Ramp::set(double next) noexcept {
+    if (next == target) return;
+    target = next;
+    remaining = rampFrames;
+    step = (target - value) / remaining;
+}
+
+double PlaybackMixer::Ramp::next() noexcept {
+    const auto previous = value;
+    if (remaining) value = --remaining ? value + step : target;
+    return previous;
+}
+
+PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial, std::size_t startFrame,
+                             std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox)
+    : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount),
+      peakMeter(peakMeter), mailbox(mailbox), master{initial.master, initial.master} {
+    for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
+        const auto gain = initial.tracks[track];
+        gains[track] = {Ramp{gain.left, gain.left}, Ramp{gain.right, gain.right}};
     }
 }
 
-std::size_t PlaybackMixer::read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept {
+void PlaybackMixer::setParameters(const MixerParameters& parameters) noexcept {
+    for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
+        gains[track][0].set(parameters.tracks[track].left);
+        gains[track][1].set(parameters.tracks[track].right);
+    }
+    master.set(parameters.master);
+}
+
+std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
+    if (mailbox) setParameters(mailbox->readLatest());
     const auto count = std::min(output.size() / channelCount * channelCount,
                                 audio.sampleCount - position);
     std::array<unsigned, channelCount> peaks{};
     for (std::size_t offset = 0; offset < count; offset += channelCount) {
         double frame[channelCount]{};
         for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
-            const double gain = static_cast<double>(gains[track]) / muteRampFrames;
             for (unsigned channel = 0; channel < channelCount; ++channel) {
-                frame[channel] += audio.tracks[track][position + offset + channel] * gain;
+                frame[channel] += audio.tracks[track][position + offset + channel] * gains[track][channel].next();
             }
-            if (muted[track] && gains[track] > 0) --gains[track];
-            if (!muted[track] && gains[track] < muteRampFrames) ++gains[track];
         }
+        const auto masterGain = master.next();
         for (unsigned channel = 0; channel < channelCount; ++channel) {
-            const auto sample = std::lround(std::clamp(frame[channel] * audio.masterGain, -1., 1.) * 32767);
+            const auto sample = std::lround(std::clamp(frame[channel] * masterGain, -1., 1.) * 32767);
             output[offset + channel] = static_cast<std::int16_t>(sample);
             if (peakMeter) peaks[channel] = std::max(peaks[channel], static_cast<unsigned>(std::abs(sample)));
         }

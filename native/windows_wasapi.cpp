@@ -177,7 +177,7 @@ std::vector<AudioEndpointInfo> listWasapiRenderEndpoints() {
 }
 
 WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig config,
-                                  const std::atomic<unsigned>& muteMask, std::atomic<unsigned>& played,
+                                  std::atomic<unsigned>& played,
                                   std::stop_token stop, std::uint64_t attempt, std::atomic<bool>* ready) noexcept {
     const ComApartment apartment;
     if (FAILED(apartment.result)) {
@@ -192,7 +192,7 @@ WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig conf
     std::stop_callback wakeOnStop(stop, [&endpoint] {
         if (endpoint.stopReady.handle) SetEvent(endpoint.stopReady.handle);
     });
-    const auto report = renderShared(endpoint, mixer, config.stream, muteMask, played, stop, ready);
+    const auto report = renderShared(endpoint, mixer, config.stream, played, stop, ready);
     return {report, std::move(config.output), std::move(endpoint.resolved), endpoint.clock};
 }
 }

@@ -52,7 +52,7 @@ Project fixture() {
 void checkEdits() {
     auto project = fixture();
     const auto original = project;
-    const auto render = [](const Project& p) { return SessionAudio(p).render(trackMutes(p)); };
+    const auto render = [](const Project& p) { return SessionAudio(p).render(mixerParameters(p)); };
     const auto expected = render(project);
     const auto first = frameAtTick(2, project.tempo);
     check(first == 50 && expected[2 * first] == 100, "Initial audio occurs at its converted tick.");
@@ -103,7 +103,7 @@ void checkMigration(const std::filesystem::path& dir) {
     const auto migrated = openProject(legacy);
     check(migrated.tracks[0].clips == std::vector<AudioClip>{{1, 12, 0, 0, 2}, {2, 12, 1, 0, 2}},
           "V1 must get stable whole-source clips in stored order.");
-    const auto rendered = SessionAudio(migrated).render(trackMutes(migrated));
+    const auto rendered = SessionAudio(migrated).render(mixerParameters(migrated));
     check(rendered[0] == 1000 && rendered[2] == 2000 && rendered[50] == 1000,
           "V1 playback and source samples must be preserved.");
     rejects([&] { saveProject(legacy, migrated); });

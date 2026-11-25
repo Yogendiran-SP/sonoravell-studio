@@ -46,12 +46,9 @@ public:
     virtual std::uint32_t nativeError() const noexcept = 0;
 };
 
-TrackMutes decodeMuteMask(unsigned mask) noexcept;
-
 // Single worker owns the endpoint and mixer. The loop uses only prepared
 // device buffers and atomics. The endpoint owns its platform resources.
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
-                                SharedRenderConfig config, const std::atomic<unsigned>& muteMask,
-                                std::atomic<unsigned>& played, std::stop_token stop,
+                                SharedRenderConfig config,                    std::atomic<unsigned>& played, std::stop_token stop,
                                 std::atomic<bool>* ready = nullptr) noexcept;
 }

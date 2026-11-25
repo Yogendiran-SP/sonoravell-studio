@@ -38,8 +38,7 @@ public:
         if (ready) CloseHandle(ready);
     }
 
-    bool run(PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask,
-             std::atomic<unsigned>& played, unsigned deviceId, std::stop_token stop) {
+    bool run(PlaybackMixer& mixer, std::atomic<unsigned>& played, unsigned deviceId, std::stop_token stop) {
         if (!ready) return false;
         std::stop_callback wakeOnStop(stop, [this] { SetEvent(ready); });
         if (stop.stop_requested()) return true;
@@ -57,7 +56,7 @@ public:
             buffer.header.lpData = reinterpret_cast<LPSTR>(buffer.samples.data());
             buffer.header.dwBufferLength = static_cast<DWORD>(sizeof(buffer.samples));
             if (waveOutPrepareHeader(device, &buffer.header, sizeof(buffer.header)) != MMSYSERR_NOERROR ||
-                !queue(buffer, mixer, muteMask)) return false;
+                !queue(buffer, mixer)) return false;
             ++pending;
         }
         if (!pending || stop.stop_requested()) return true;
@@ -81,7 +80,7 @@ public:
             oldest = (oldest + 1) % buffers.size();
             --pending;
             if (!mixer.finished()) {
-                if (!queue(buffer, mixer, muteMask)) return false;
+                if (!queue(buffer, mixer)) return false;
                 ++pending;
             }
         }
@@ -89,8 +88,8 @@ public:
     }
 
 private:
-    bool queue(Buffer& buffer, PlaybackMixer& mixer, const std::atomic<unsigned>& muteMask) {
-        const auto count = mixer.read(buffer.samples, decodeMuteMask(muteMask.load()));
+    bool queue(Buffer& buffer, PlaybackMixer& mixer) {
+        const auto count = mixer.read(buffer.samples);
         buffer.header.dwBufferLength = static_cast<DWORD>(count * sizeof(buffer.samples.front()));
         return waveOutWrite(device, &buffer.header, sizeof(buffer.header)) == MMSYSERR_NOERROR;
     }
@@ -119,13 +118,7 @@ public:
         playbackState.store(State::stopped);
     }
 
-    void setMutes(const TrackMutes& muted) {
-        unsigned mask = 0;
-        for (std::size_t track = 0; track < muted.size(); ++track) {
-            if (muted[track]) mask |= 1u << track;
-        }
-        muteMask.store(mask);
-    }
+    void setMixer(const MixerParameters& parameters) noexcept { mixerParameters.publish(parameters); }
 
     void play(std::shared_ptr<const SessionAudio> session, unsigned startFrame, unsigned deviceId,
               std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}) {
@@ -137,9 +130,9 @@ public:
         try {
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
                                    wasapi = std::move(wasapi), duplex = std::move(duplex)](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(*session, decodeMuteMask(muteMask.load()), startFrame, &peakMeter);
+                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters);
                 if (wasapi) {
-                    wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), muteMask, played, stopToken,
+                    wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), played, stopToken,
                                                 duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
                     playbackState.store(wasapiRun->stream.end == RenderEnd::failed ? State::failed : State::completed);
                     if (duplex) duplex->renderExited(wasapiRun->stream.error);
@@ -148,7 +141,7 @@ public:
                 bool ok;
                 {
                     WaveStream stream;
-                    ok = stream.run(mixer, muteMask, played, deviceId, stopToken);
+                    ok = stream.run(mixer, played, deviceId, stopToken);
                 }
                 playbackState.store(ok ? State::completed : State::failed);
             });
@@ -159,7 +152,7 @@ public:
     }
 
 private:
-    std::atomic<unsigned> muteMask{0};
+    MixerParameterMailbox mixerParameters;
     std::atomic<unsigned> played{0};
     std::atomic<std::uint32_t> peakMeter{0};
     std::atomic<State> playbackState{State::stopped};

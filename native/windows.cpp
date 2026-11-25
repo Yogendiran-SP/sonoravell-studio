@@ -605,7 +605,7 @@ void applyEditedProject(HWND window, int index, EditImpact impact) {
     }
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
-    audio.setMutes(trackMutes(project));
+    audio.setMixer(mixerParameters(project));
     markDirty();
     refresh(window, index);
 }
@@ -633,7 +633,7 @@ void installProject(HWND window, Project next) {
     playFrom = 0;
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
-    audio.setMutes(trackMutes(project));
+    audio.setMixer(mixerParameters(project));
     dirty = false;
     autosavePending = false;
     autosave.startSession();
@@ -1061,6 +1061,7 @@ void showAudioDevices(HWND window) {
 }
 
 void startPlayback() {
+    audio.setMixer(mixerParameters(project));
     if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig);
     else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice));
 }
@@ -1084,6 +1085,7 @@ void startDuplex(HWND window, unsigned tick, unsigned capacity) {
     playFrom = frameAtTick(tick, project.tempo);
     if (captureLaunched) {
         try {
+            audio.setMixer(mixerParameters(project));
             audio.play(snapshot, playFrom, WAVE_MAPPER, std::move(output), notices);
         } catch (...) {
             notices->renderExited(RenderError::driver);
@@ -1270,7 +1272,7 @@ void execute(HWND window, int id) {
     } else if (id == exportId) {
         const auto path = selectFile(window, true, wavFilter, L"wav");
         if (!path.empty()) {
-            const auto samples = renderedSession()->render(trackMutes(project));
+            const auto samples = renderedSession()->render(mixerParameters(project));
             std::ofstream file(path, std::ios::binary);
             writeWave(file, samples);
             file.close();
@@ -1337,7 +1339,7 @@ void execute(HWND window, int id) {
         replayEdit(window, id == redoId);
     } else if (id == masterApplyId) {
         const auto level = value(window, masterId, 0, 100, "Enter a master level from 0 to 100 percent.");
-        edit(window, [level](Project& draft) { draft.masterVolume = level; }, selectedTrack(window));
+        edit(window, [level](Project& draft) { draft.masterVolume = level; }, selectedTrack(window), EditImpact::liveMixer);
         status(window, L"Updated the master level.");
     } else if (id == tempoApplyId) {
         const auto tempo = value(window, tempoId, 30, 300, "Set tempo between 30 and 300 BPM.");
@@ -1353,7 +1355,7 @@ void execute(HWND window, int id) {
                 auto& selected = draft.tracks[index];
                 if (id == muteId) selected.muted = state;
                 else selected.solo = state;
-            }, index, EditImpact::liveMute);
+            }, index, EditImpact::liveMixer);
         } else if (id == renameTrackId) {
             wchar_t name[202]{};
             const auto size = GetDlgItemTextW(window, trackNameId, name, static_cast<int>(std::size(name)));
@@ -1381,7 +1383,7 @@ void execute(HWND window, int id) {
             edit(window, [=](Project& draft) {
                 draft.tracks[index].volume = volume;
                 draft.tracks[index].pan = pan;
-            }, index);
+            }, index, EditImpact::liveMixer);
             status(window, L"Updated track volume and pan.");
         } else if ((id == noteId || id == updateNoteId || id == deleteNoteId) && track.instrument != Instrument::audio) {
             const auto selected = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
@@ -1708,6 +1710,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const bool presetsOk = beginnerOk && mixLayoutOk && arrangeLayoutOk && mixerShown &&
             inspectorShown && browserShown && prepared == preparedBeforeLayout && project == priorLayout &&
             IsWindowEnabled(field(window, stopId));
+        const auto beforeMixer = renderedSession();
         SetDlgItemInt(window, panId, static_cast<UINT>(-50), TRUE);
         execute(window, volumeApplyId);
         SetDlgItemInt(window, masterId, 65, FALSE);
@@ -1716,7 +1719,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         execute(window, soloId);
         const bool mixerOk = project.tracks[1].pan == -50 && project.masterVolume == 65 && project.tracks[1].solo;
         execute(window, undoId);
-        const bool soloUndoOk = !project.tracks[1].solo && project.masterVolume == 65;
+        const bool soloUndoOk = !project.tracks[1].solo && project.masterVolume == 65 && prepared == beforeMixer;
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
                clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk ? 0 : 1;

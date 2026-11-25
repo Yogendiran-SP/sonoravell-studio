@@ -81,12 +81,12 @@ int main() {
         saveProject(session, song);
         const auto reopened = openProject(session);
         check(reopened == song, "Replacing a Session lost edited MIDI or embedded audio");
-        auto audio = SessionAudio(reopened).render(trackMutes(reopened));
+        auto audio = SessionAudio(reopened).render(mixerParameters(reopened));
         check(frameAtTick(1920, song.tempo) == 48000, "Beat to sample conversion is incorrect");
         check(audio[48001 * 2] != 0 && audio[48001 * 2] == audio[48001 * 2 + 1],
               "Imported audio did not play on both channels at its clip position");
         song.tracks.back().muted = true;
-        const auto muted = SessionAudio(song).render(trackMutes(song));
+        const auto muted = SessionAudio(song).render(mixerParameters(song));
         check(muted[48001 * 2] == 0, "Mute was ignored during export");
 
         song.tracks.back().clips.front().assetId = 99;

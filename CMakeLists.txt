@@ -42,7 +42,7 @@ if(BUILD_TESTING)
   add_test(NAME arrangement_check COMMAND arrangement_check)
 
   add_executable(mixer_check tests/mixer_check.cpp)
-  target_link_libraries(mixer_check PRIVATE sonoravell_engine)
+  target_link_libraries(mixer_check PRIVATE sonoravell_engine Threads::Threads)
   add_test(NAME mixer_check COMMAND mixer_check)
   add_executable(take_check tests/take_check.cpp)
   target_link_libraries(take_check PRIVATE sonoravell_engine Threads::Threads)

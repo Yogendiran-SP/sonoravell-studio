@@ -25,7 +25,7 @@ void benchmark(const SessionAudio& demo) {
         auto output = std::span(samples).first(frames * channelCount);
         while (!mixer.finished()) {
             const auto start = Clock::now();
-            mixer.read(output, {});
+            mixer.read(output);
             const auto elapsed = Clock::now() - start;
             durations.push_back(Microseconds(elapsed).count());
         }
@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
         } else {
             std::ofstream file(argv[argc - 1], std::ios::binary);
             if (!file) throw std::runtime_error("Could not open WAV output");
-            writeWave(file, audio.render(trackMutes(project)));
+            writeWave(file, audio.render(mixerParameters(project)));
             file.close();
             if (!file) throw std::runtime_error("Could not finish WAV output");
         }
