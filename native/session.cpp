@@ -1,8 +1,8 @@
 #include "session.hpp"
+#include "instruments.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 #include <ostream>
 #include <stdexcept>
 #include <utility>
@@ -70,8 +70,6 @@ MixerParameters mixerParameters(const Project& project) noexcept {
 
 SessionAudio::SessionAudio(const Project& project, SourceStorage storage) {
     validateProject(project);
-    constexpr double tau = 2 * std::numbers::pi;
-    constexpr double voiceBalance[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}, {1, 1}};
     sampleCount = static_cast<std::size_t>(sessionFrames(project)) * channelCount;
     metronome.emplace(project.tempo, static_cast<unsigned>(sampleCount / channelCount));
     tracks.reserve(project.tracks.size());
@@ -89,27 +87,13 @@ SessionAudio::SessionAudio(const Project& project, SourceStorage storage) {
         for (const auto& note : track.notes) {
             const auto start = frameAtTick(note.tick, project.tempo);
             const auto length = frameAtTick(note.tick + note.length, project.tempo) - start;
-            const double frequency = 440 * std::exp2((note.pitch - 69) / 12.0);
-            const double level = .14 * note.velocity / 127;
-            std::uint32_t noiseState = 0x8c31274u + start;
-            for (std::uint32_t frame = 0; frame < length; ++frame) {
-                const double time = static_cast<double>(frame) / sampleRate;
-                const double phase = tau * frequency * time;
-                const double envelope = std::min({1.0, time * 350, (length - frame - 1) / 500.0});
-                double voice = std::sin(phase);
-                if (track.instrument == Instrument::drums) {
-                    noiseState = noiseState * 1664525u + 1013904223u;
-                    const double noise = (noiseState >> 8) / 8388608.0 - 1.0;
-                    voice = note.pitch == 36
-                        ? std::sin(tau * (52 * time + 2 * (1 - std::exp(-55 * time)))) * std::exp(-17 * time)
-                        : noise * std::exp(-(note.pitch == 38 ? 29 : 65) * time);
-                } else if (track.instrument == Instrument::pluck) {
-                    voice = (.8 * voice + .2 * std::sin(phase * 2)) * std::exp(-12 * time);
-                }
-                for (unsigned channel = 0; channel < channelCount; ++channel) {
-                    samples.add((start + frame) * channelCount + channel,
-                        static_cast<float>(level * voice * envelope * voiceBalance[static_cast<unsigned>(track.instrument)][channel]));
-                }
+            BuiltinVoice voice(track.instrument, note, start, length);
+            std::array<float, sourceBlockSamples> block;
+            auto destination = static_cast<std::size_t>(start) * channelCount;
+            while (!voice.finished()) {
+                const auto count = voice.read(block);
+                for (std::size_t i = 0; i < count; ++i) samples.add(destination + i, block[i]);
+                destination += count;
             }
         }
     }
@@ -121,11 +105,12 @@ Samples SessionAudio::render(const MixerParameters& parameters, AudioBlockProces
     return samples;
 }
 
-Samples SessionAudio::renderProject(const Project& project) const {
+Samples SessionAudio::renderProject(const Project& project, const PreparedAutomation* automation) const {
     auto processors = prepareInserts(project);
     Samples samples(sampleCount);
     PlaybackMixer mixer(*this, mixerParameters(project));
     mixer.attachInserts(processors.get());
+    mixer.attachAutomation(automation);
     mixer.read(samples);
     return samples;
 }
@@ -221,10 +206,24 @@ void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, 
             else std::ranges::fill(trackBlock, 0.);
             inserts->tracks[track].process(trackBlock);
         }
-        for (std::size_t i = 0; i < output.size(); ++i) {
-            const auto gain = gains[track][i % channelCount].next();
-            if (process) prepared[i] += trackBlock[i] * gain;
-            else if (source) prepared[i] += source[first + i] * gain;
+        if (automation && automation->controls(track)) {
+            const auto frame = static_cast<unsigned>((index * sourceBlockSamples + first) / channelCount);
+            auto cursor = automation->cursor(track, frame);
+            for (std::size_t i = 0; i < output.size(); i += channelCount) {
+                const auto trim = cursor.next();
+                const std::array automationGains{trim.left, trim.right};
+                for (unsigned c = 0; c < channelCount; ++c) {
+                    const auto gain = gains[track][c].next() * automationGains[c];
+                    if (process) prepared[i + c] += trackBlock[i + c] * gain;
+                    else if (source) prepared[i + c] += source[first + i + c] * gain;
+                }
+            }
+        } else {
+            for (std::size_t i = 0; i < output.size(); ++i) {
+                const auto gain = gains[track][i % channelCount].next();
+                if (process) prepared[i] += trackBlock[i] * gain;
+                else if (source) prepared[i] += source[first + i] * gain;
+            }
         }
     }
     if (inserts) inserts->master.process(prepared);

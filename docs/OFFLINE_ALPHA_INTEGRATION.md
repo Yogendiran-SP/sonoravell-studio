@@ -101,3 +101,21 @@ Use the [finite alpha checklist](ALPHA_RELEASE_CHECKLIST.md) for candidate
 evidence, performance reporting and rollback. Portability checks and
 synthetic recording recovery run in CI. The candidate walkthrough,
 accessibility review and physical audio measurements have separate sign-off.
+
+## Engine boundaries for later milestones
+
+ENG-06, EDIT-07 and INS-01. The optional immutable fader automation input
+compiles ordered, bounded frame points for track volume and pan. The
+renderer interpolates both controls before applying the resulting stereo
+trim to the existing mixer fader. The first and last points hold outside
+their range. Absolute Session frames make offline export, seeks and loop
+wraps agree. Mute and solo retain precedence. There is no allocation on
+the playback path, and Sessions without a prepared lane use the existing
+mixer path. The native automation editor and automation persistence stay
+outside the frozen alpha scope.
+
+Built-in note voices now share a bounded stereo source interface. Each
+voice owns its phase position and deterministic noise sequence. The
+source builder prepares voices and sums them in existing note order, off
+the audio thread. Partition tests retain identical samples across block
+sizes. Live instrument scheduling and third-party hosting are later work.

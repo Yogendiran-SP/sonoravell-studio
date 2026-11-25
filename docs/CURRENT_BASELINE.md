@@ -1,11 +1,11 @@
 # Current native-development baseline
 
-Audit date: 2026-11-25. Offline Desktop Alpha development starts from
-[`beef9a5`, PR #18](https://github.com/Yogendiran-SP/sonoravell-studio/pull/18)
-and follows the [two-workstream acceptance gates](OFFLINE_DESKTOP_ALPHA.md).
-The [baseline native checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45559230504)
-passed. The transport and qualification tools were also verified before the editor work.
-Physical hardware acceptance remains open.
+Audit date: 2026-11-25. The offline integration built on
+[`9bf6cda`, PR #30](https://github.com/Yogendiran-SP/sonoravell-studio/pull/30)
+and its [Windows, macOS and Linux CI](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45588370541).
+The [integration record](OFFLINE_ALPHA_INTEGRATION.md) covers the v4 Session,
+prepared inserts, transport, editing, and rollback. Physical audio testing
+follows the [separate acceptance protocol](HARDWARE_QUALIFICATION.md).
 
 ## Implemented in repository source
 
@@ -13,7 +13,7 @@ Physical hardware acceptance remains open.
 - Native track creation, naming, duplication and reordering. The arrangement provides clip hit testing, cross-track moves, source ranges, cached waveform previews and a zoomable grid shared with Piano Roll.
 - Editable local `Project` with tracks, MIDI notes, audio clips, basic tempo/volume/mute and an in-memory Audio Pool.
 - `.sonora` v4 saves clip ranges, mixer settings, and master and track insert chains. The reader migrates v1–v3 in memory and the writer preserves older Session files. See the [clip rules and parallel alpha gates](OFFLINE_DESKTOP_ALPHA.md).
-- Independent playback has Pause/Resume, ruler seek, Seek to start, and whole-Session or selected-region looping and a playback metronome. Export and experimental duplex remain one-shot.
+- Independent playback has Pause/Resume, ruler seek, Seek to start, whole-Session or selected-region looping, and a playback metronome. Export and experimental duplex remain one-shot.
 - PCM WAV import (16-bit mono/stereo, 44.1/48 kHz), simple resampling, placement of clips and use of the Audio Pool.
 - Single mono recording from the selected Windows input, finalized on Stop. The recording worker writes recoverable blocks to a local take journal. **Recover take…** restores the verified prefix when input or storage is interrupted.
 - Local Session autosave rotates two staged checkpoints per working Session. Restore opens a copy with its embedded audio.
@@ -26,6 +26,7 @@ Physical hardware acceptance remains open.
 - A finalized experimental duplex take can export qualified attempt clocks and a PCM fingerprint beside its journal. This supports a checked QPC-to-signal comparison in the offline tool.
 - Master Effects and Track Effects expose persistent gain, EQ, compressor and delay inserts with live bypass and bounded processing. Track chains run before the fader. See [alpha integration](OFFLINE_ALPHA_INTEGRATION.md).
 - Live track volume, balance, mute, solo and master ramps with stereo output-buffer peaks. The render worker applies complete parameter snapshots without rebuilding its source audio. Native view presets, adjustable side panels and named workspace files are independent of playback and Session state. Offline WAV export and CLI render use the Session mixer.
+- Internal optional volume/pan automation and bounded built-in note voices have deterministic fixture coverage. The automation editor, automation persistence, and live instrument scheduling remain later milestones.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
 Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/windows_wasapi_capture.cpp`, `native/audio_endpoints.hpp`, and the `tests` directory.
