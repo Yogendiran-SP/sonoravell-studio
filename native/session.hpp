@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mixer_parameters.hpp"
+#include "source_blocks.hpp"
 
 #include <array>
 #include <atomic>
@@ -29,12 +30,13 @@ std::vector<Note> afterHours();
 
 class SessionAudio {
 public:
-    explicit SessionAudio(const Project& project);
+    explicit SessionAudio(const Project& project, SourceStorage storage = SourceStorage::sparseBlocks);
     Samples render(const MixerParameters& parameters) const;
+    std::size_t preparedBytes() const noexcept;
 
 private:
     friend class PlaybackMixer;
-    std::vector<std::vector<float>> tracks;
+    std::vector<PreparedTrack> tracks;
     std::size_t sampleCount;
 };
 
@@ -51,6 +53,8 @@ public:
     unsigned remainingFrames() const noexcept;
 
 private:
+    void mixBlock(std::span<std::int16_t> output, std::size_t index, std::size_t first,
+                  std::array<unsigned, channelCount>& peaks) noexcept;
     const SessionAudio& audio;
     std::size_t position = 0;
     std::atomic<std::uint32_t>* peakMeter;
