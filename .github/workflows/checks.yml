@@ -22,7 +22,9 @@ jobs:
       - run: ctest --test-dir build -C Release --output-on-failure
       - name: Report mixer timing
         if: runner.os == 'Linux'
-        run: ./build/sonoravell-render --benchmark
+        run: |
+          ./build/sonoravell-render --benchmark
+          ./build/sonoravell-render --benchmark-alpha
       - name: Stage Windows application
         if: runner.os == 'Windows'
         run: cmake --install build --config Release --prefix package

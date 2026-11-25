@@ -93,3 +93,11 @@ buffer spans several wraps. Stop, resume and seek still create fresh
 processor state. WAV export and experimental duplex retain one-shot
 behavior. Keyboard commands, a deterministic loop fixture and the
 Windows workspace check cover the boundary and rejection policy.
+
+
+## Alpha acceptance
+
+Use the [finite alpha checklist](ALPHA_RELEASE_CHECKLIST.md) for candidate
+evidence, performance reporting and rollback. Portability checks and
+synthetic recording recovery run in CI. The candidate walkthrough,
+accessibility review and physical audio measurements have separate sign-off.

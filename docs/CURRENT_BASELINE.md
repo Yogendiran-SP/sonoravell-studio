@@ -30,6 +30,8 @@ Physical hardware acceptance remains open.
 
 Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/windows_wasapi_capture.cpp`, `native/audio_endpoints.hpp`, and the `tests` directory.
 
+Run the [offline alpha candidate checklist](ALPHA_RELEASE_CHECKLIST.md) before release.
+
 ## Limitations still open
 
 - `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Independent Record stops playback. Experimental WASAPI recording with playback awaits physical qualification. Live monitoring and multitrack capture remain future work.
