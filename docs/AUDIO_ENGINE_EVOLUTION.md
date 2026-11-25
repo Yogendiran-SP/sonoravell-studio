@@ -168,5 +168,6 @@ source or timeline range leaves the original clip and its source media
 intact. Capture locks out drag edits. Structural edits follow the same
 snapshot and playback lifecycle as Inspector commands. Tests cover
 signed drag projection, grid and boundary behavior and a Windows
-select/drag/undo round trip. Piano roll gestures, velocity editing,
+drag transaction, cancellation and undo. The smoke starts from prepared
+gesture geometry so it also runs on an unattended Windows desktop. Piano roll gestures, velocity editing,
 playback metronome and recording count-in have separate acceptance work.

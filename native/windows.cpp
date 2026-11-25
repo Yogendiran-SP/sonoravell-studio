@@ -1326,7 +1326,7 @@ void updateClipDrag(HWND window, int x) {
     InvalidateRect(window, &panel, FALSE);
 }
 
-void beginClipDrag(HWND window, const AudioClip& clip, const RECT& box, int x) {
+void stageClipDrag(const AudioClip& clip, const RECT& box, int x) {
     auto operation = ClipEdit::move;
     auto anchor = clip.tick;
     if (box.right - box.left >= 14) {
@@ -1340,9 +1340,6 @@ void beginClipDrag(HWND window, const AudioClip& clip, const RECT& box, int x) {
         }
     }
     clipDrag = ClipDrag{clip.id, operation, anchor, x, anchor};
-    SetFocus(window);
-    SetCapture(window);
-    if (GetCapture() != window) clearClipDrag(window);
 }
 
 void execute(HWND window, int id) {
@@ -1753,7 +1750,11 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                         const auto box = arrangementBlock(panel, top, rowHeight, start, start + it->frameCount);
                         if (PtInRect(&box, point)) {
                             selectedClipId = it->id;
-                            if (!capture.active()) beginClipDrag(window, *it, box, x);
+                            if (!capture.active()) {
+                                SetFocus(window);
+                                SetCapture(window);
+                                if (GetCapture() == window) stageClipDrag(*it, box, x);
+                            }
                             break;
                         }
                     }
@@ -1969,8 +1970,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const auto lane = arrangeRect(window);
         const auto laneTop = lane.top + 58 + arrangementRowHeight(lane);
         const auto initialClip = project.tracks[1].clips.back();
-        const int xClip = timelineX(lane, frameAtTick(initialClip.tick, project.tempo));
-        SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(xClip, laneTop + 7));
+        const auto frame = frameAtTick(initialClip.tick, project.tempo);
+        const auto box = arrangementBlock(lane, laneTop, arrangementRowHeight(lane), frame, frame + initialClip.frameCount);
+        const int xClip = (box.left + box.right) / 2;
+        stageClipDrag(initialClip, box, xClip);
         SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(xClip + 35, laneTop + 7));
         const bool dragStaged = project == beforeDrag && clipDrag && clipDrag->moved;
         SendMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(xClip + 35, laneTop + 7));
@@ -1978,9 +1981,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
                                project.assets.front().stereo().data() == source;
         execute(window, undoId);
         const bool gesturesOk = dragStaged && dragCommitted && project == beforeDrag;
+        stageClipDrag(initialClip, box, xClip);
+        SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(xClip + 35, laneTop + 7));
+        SendMessageW(window, WM_CANCELMODE, 0, 0);
+        const bool dragCancelled = !clipDrag && project == beforeDrag;
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk && dragCancelled ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
