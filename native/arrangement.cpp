@@ -48,6 +48,15 @@ std::uint32_t snapTimelineTick(std::uint32_t tick, std::uint32_t endTick, unsign
     return static_cast<std::uint32_t>(std::min<std::uint64_t>(rounded, (endTick - 1) / step) * step);
 }
 
+std::uint32_t dragTimelineTick(std::uint32_t anchor, int pixels, int width, std::uint32_t visibleTicks,
+                               std::uint32_t endExclusive, unsigned step) noexcept {
+    if (width <= 0 || !endExclusive || !pixels) return anchor;
+    const auto scaled = static_cast<std::int64_t>(pixels) * visibleTicks;
+    const auto delta = (scaled + (scaled < 0 ? -width / 2 : width / 2)) / width;
+    const auto target = std::clamp<std::int64_t>(anchor + delta, 0, endExclusive - 1);
+    return snapTimelineTick(static_cast<std::uint32_t>(target), endExclusive, step);
+}
+
 WaveformPeaks::WaveformPeaks(const AudioAsset& asset) noexcept
     : framesPerBin(std::max<std::size_t>(1, (asset.stereo().size() / channelCount + bins - 1) / bins)),
       frames(static_cast<unsigned>(asset.stereo().size() / channelCount)) {

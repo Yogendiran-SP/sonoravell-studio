@@ -153,3 +153,21 @@ with unequal block sizes. Native projects and the desktop renderer still
 use dry defaults. User-facing insertion, per-track routing, persisted
 effects, automation, real-time editing of effect settings and third-party
 hosting require later increments with lifecycle and licensing reviews.
+
+## Arrangement gestures
+
+EDIT-01 and UX-02. Drag the body of an audio clip to move it on its own
+track. On wider clips, use the marked left and right ends to trim. The
+timeline draws a proposed edit position while dragging, using the same
+grid as the ruler. A click only selects the clip. Escape or loss of mouse
+capture cancels the action. The Inspector still provides precise beat
+entry for narrow clips and keyboard workflows.
+
+A released gesture becomes one validated undoable command. An invalid
+source or timeline range leaves the original clip and its source media
+intact. Capture locks out drag edits. Structural edits follow the same
+snapshot and playback lifecycle as Inspector commands. Tests cover
+signed drag projection, grid and boundary behavior and a Windows
+drag transaction, cancellation and undo. The smoke starts from prepared
+gesture geometry so it also runs on an unattended Windows desktop. Piano roll gestures, velocity editing,
+playback metronome and recording count-in have separate acceptance work.

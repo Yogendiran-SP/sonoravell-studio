@@ -9,6 +9,9 @@ std::size_t duplicateTrack(Project& project, std::size_t index);
 std::size_t moveTrack(Project& project, std::size_t index, bool earlier);
 std::uint32_t snapTimelineTick(std::uint32_t tick, std::uint32_t endTick, unsigned step) noexcept;
 
+std::uint32_t dragTimelineTick(std::uint32_t anchor, int pixels, int width, std::uint32_t visibleTicks,
+                               std::uint32_t endExclusive, unsigned step) noexcept;
+
 class WaveformPeaks {
 public:
     explicit WaveformPeaks(const AudioAsset& asset) noexcept;
