@@ -102,3 +102,27 @@ large frame counters, resume position, and one-shot EOF. The Windows
 workspace smoke tests check grid seeking, loop selection, and unchanged
 Session/snapshot state. Physical pause timing and audible seam quality
 are hardware acceptance work.
+
+## Local adaptive workspace
+
+UX-01, UX-06, UX-07, UX-08, UX-09 and UX-14. Beginner through Pro and
+Recording, Arrange, Composition and Mix set display options only. Use
+Commands to widen or narrow either side panel in 26-pixel steps. Focus
+and individual visibility retain transport. Tab moves through the native
+controls and Ctrl+F, search text, and Enter open the filtered commands.
+Reset workspace restores default visibility and widths in one action.
+
+The last workspace is saved per Windows user. Save workspace layout as
+and Open workspace layout use named local files with a separate versioned
+nine-byte format. Load validates every field before applying the view.
+Save creates a new name and preserves existing layout files. Preset and
+panel switching works during recording. Custom file dialogs are disabled
+during capture so Stop stays available. Session, prepared audio, command
+history and offline recording do not depend on the settings. No third-party
+framework is introduced.
+
+Portable acceptance covers layout round trips, bounds, corruption and
+unsupported versions. Native workspace smoke verifies resize and reset
+while retaining the same Session, snapshot and enabled Stop. Docking,
+floating panels, accessibility walkthrough and usability acceptance remain
+separate work.

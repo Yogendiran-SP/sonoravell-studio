@@ -12,6 +12,7 @@
 #include "edit_history.hpp"
 #include "session.hpp"
 #include "playback_position.hpp"
+#include "workspace_layout.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
 #include "windows_capture.hpp"
@@ -49,7 +50,9 @@ enum ControlId {
     trackNameId, renameTrackId, duplicateTrackId, trackUpId, trackDownId, addAudioTrackId, clipRangeId,
     gridBeatId, gridQuarterId, gridSixteenthId, gridOffId, placeOnTrackId,
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
-    beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, loopId, rewindId
+    beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
+    loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
+    saveLayoutId, openLayoutId
 };
 
 Project project = afterHoursProject();
@@ -105,14 +108,19 @@ ULONGLONG autosaveAfter = 0;
 SessionAutosave autosave;
 bool focused = false;
 bool inspectorShown = true, browserShown = true, mixerShown = true;
-struct WorkspaceLayout { bool inspector; bool browser; bool mixer; };
+unsigned inspectorWidth = defaultPanelWidth, browserWidth = defaultPanelWidth;
+bool workspaceCheck = false;
+constexpr wchar_t workspaceKey[] = L"Software\\Sonoravell Studio";
+constexpr wchar_t workspaceValue[] = L"WorkspaceLayout";
 constexpr std::array workspaceLayouts{
     WorkspaceLayout{true, true, false},  // Beginner
     WorkspaceLayout{true, false, true},  // Intermediate
     WorkspaceLayout{false, true, true},  // Advanced
     WorkspaceLayout{true, true, true},   // Pro
     WorkspaceLayout{true, false, false}, // Arrange
-    WorkspaceLayout{false, false, true}  // Mix
+    WorkspaceLayout{false, false, true}, // Mix
+    WorkspaceLayout{true, true, true},   // Record: input setup and take recovery
+    WorkspaceLayout{true, false, false, false, defaultPanelWidth + 2 * panelWidthStep} // Compose
 };
 unsigned playFrom = 0;
 bool paused = false;
@@ -159,6 +167,19 @@ void showInspectorEventControls(HWND window) {
     }
 }
 
+WorkspaceLayout currentLayout() noexcept {
+    return {inspectorShown, browserShown, mixerShown, focused, inspectorWidth, browserWidth};
+}
+
+void applyLayout(const WorkspaceLayout& layout) noexcept {
+    inspectorShown = layout.inspector;
+    browserShown = layout.browser;
+    mixerShown = layout.mixer;
+    focused = layout.focus;
+    inspectorWidth = layout.inspectorWidth;
+    browserWidth = layout.browserWidth;
+}
+
 void layout(HWND window) {
     RECT client{};
     GetClientRect(window, &client);
@@ -181,7 +202,7 @@ void layout(HWND window) {
     place(tempoLabelId, 350, 53, 82, 20);
     place(tempoId, 430, 47, 52, 26);
     place(tempoApplyId, 490, 47, 57, 28);
-    const int queryWidth = std::clamp(width - 770, 52, 143);
+    const int queryWidth = std::clamp(width - 765, 28, 143);
     place(loopId, 619, 47, 50, 28);
     place(deviceId, 549, 47, 66, 28);
     place(queryId, width - 96 - queryWidth, 47, queryWidth, 27);
@@ -195,37 +216,39 @@ void layout(HWND window) {
     show({browserId, importId, addTrackId, addAudioTrackId, assetListId, placeId, recoverId}, browserShown);
     show({mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, soloId,
           panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId}, mixerShown);
-    place(inspectorId, 10, 91, 173, height - 176);
+    const int inspectorExtra = static_cast<int>(inspectorWidth - defaultPanelWidth);
+    const int browserExtra = static_cast<int>(browserWidth - defaultPanelWidth);
+    place(inspectorId, 10, 91, inspectorWidth, height - 176);
     place(trackLabelId, 22, 122, 145, 18);
-    place(trackListId, 22, 143, 148, 280);
+    place(trackListId, 22, 143, 148 + inspectorExtra, 280);
     place(beatLabelId, 22, 184, 105, 22);
     place(beatId, 126, 180, 45, 24);
     place(pitchLabelId, 22, 219, 100, 22);
     place(pitchId, 126, 215, 45, 24);
     place(lengthLabelId, 22, 251, 100, 22);
     place(lengthId, 126, 247, 45, 24);
-    place(noteListId, 22, 277, 148, 240);
+    place(noteListId, 22, 277, 148 + inspectorExtra, 240);
     place(noteId, 22, 309, 148, 27);
     place(updateNoteId, 22, 343, 70, 27);
     place(deleteNoteId, 99, 343, 71, 27);
-    place(clipListId, 22, 215, 148, 200);
-    place(splitClipId, 22, 250, 148, 27);
+    place(clipListId, 22, 215, 148 + inspectorExtra, 200);
+    place(splitClipId, 22, 250, 148 + inspectorExtra, 27);
     place(trimStartId, 22, 284, 70, 27);
     place(trimEndId, 99, 284, 71, 27);
     place(moveId, 22, 318, 70, 27);
     place(duplicateClipId, 99, 318, 71, 27);
     place(deleteClipId, 22, 352, 148, 27);
-    place(clipRangeId, 22, 383, 148, 25);
+    place(clipRangeId, 22, 383, 148 + inspectorExtra, 25);
     place(trackNameId, 22, 412, 91, 24);
     place(renameTrackId, 116, 412, 54, 24);
     place(removeId, 22, 440, 148, 25);
-    place(browserId, width - 183, 91, 173, height - 176);
-    place(importId, width - 171, 124, 148, 28);
-    place(addTrackId, width - 171, 162, 91, 28);
+    place(browserId, width - 183 - browserExtra, 91, browserWidth, height - 176);
+    place(importId, width - 171 - browserExtra, 124, 148 + browserExtra, 28);
+    place(addTrackId, width - 171 - browserExtra, 162, 91 + browserExtra, 28);
     place(addAudioTrackId, width - 76, 162, 53, 28);
-    place(recoverId, width - 171, 200, 148, 28);
-    place(assetListId, width - 171, 242, 148, height - 491);
-    place(placeId, width - 171, height - 241, 148, 28);
+    place(recoverId, width - 171 - browserExtra, 200, 148 + browserExtra, 28);
+    place(assetListId, width - 171 - browserExtra, 242, 148 + browserExtra, height - 491);
+    place(placeId, width - 171 - browserExtra, height - 241, 148 + browserExtra, 28);
     place(mixerId, 10, height - 77, width - 20, 50);
     place(volumeLabelId, 25, height - 53, 63, 18);
     place(volumeId, 88, height - 58, 38, 24);
@@ -245,7 +268,8 @@ void layout(HWND window) {
 RECT arrangeRect(HWND window) {
     RECT rect{};
     GetClientRect(window, &rect);
-    return {focused || !inspectorShown ? 12 : 190, 96, rect.right - (focused || !browserShown ? 12 : 190),
+    return {focused || !inspectorShown ? 12 : static_cast<LONG>(inspectorWidth + 17), 96,
+            rect.right - (focused || !browserShown ? 12 : static_cast<LONG>(browserWidth + 17)),
             rect.bottom - (focused || !mixerShown ? 28 : 87)};
 }
 
@@ -753,11 +777,16 @@ void showCommands(HWND window) {
          {gridBeatId, L"Grid: 1 beat"}, {gridQuarterId, L"Grid: 1/4 beat"}, {gridSixteenthId, L"Grid: 1/16 beat"},
          {gridOffId, L"Grid: Off"}, {beginnerLayoutId, L"Layout: Beginner"},
          {intermediateLayoutId, L"Layout: Intermediate"}, {advancedLayoutId, L"Layout: Advanced"},
-         {proLayoutId, L"Layout: Pro"}, {arrangeLayoutId, L"Layout: Arrange"}, {mixLayoutId, L"Layout: Mix"}}) {
+         {proLayoutId, L"Layout: Pro"}, {arrangeLayoutId, L"Layout: Arrange"}, {mixLayoutId, L"Layout: Mix"},
+         {recordLayoutId, L"Layout: Recording"}, {composeLayoutId, L"Layout: Composition"},
+         {widerInspectorId, L"Layout: Widen Inspector"}, {narrowerInspectorId, L"Layout: Narrow Inspector"},
+         {widerBrowserId, L"Layout: Widen Browser"}, {narrowerBrowserId, L"Layout: Narrow Browser"},
+         {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
+        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId;
         const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
-                                                           : !action || IsWindowEnabled(action);
+            : (!needsIdle || !capture.active()) && (!action || IsWindowEnabled(action));
         AppendMenuW(menu, MF_STRING | (available ? MF_ENABLED : MF_GRAYED),
                     entry.first, entry.second);
     }
@@ -1199,17 +1228,78 @@ void pollDuplex(HWND window) {
     }
 }
 
+void loadCurrentLayout() {
+    if (workspaceCheck) return;
+    WorkspaceBytes buffer{};
+    DWORD size = static_cast<DWORD>(buffer.size());
+    if (RegGetValueW(HKEY_CURRENT_USER, workspaceKey, workspaceValue, RRF_RT_REG_BINARY, nullptr,
+                    buffer.data(), &size) == ERROR_SUCCESS && size == buffer.size()) {
+        if (const auto saved = decodeWorkspace(std::span(buffer).first(size))) applyLayout(*saved);
+    }
+}
+
+void showLayout(HWND window) {
+    SetDlgItemTextW(window, focusId, focused ? L"Full view" : L"Focus");
+    layout(window);
+}
+
+void changeLayout(HWND window) {
+    showLayout(window);
+    if (workspaceCheck) return;
+    const auto bytes = encodeWorkspace(currentLayout());
+    HKEY key = nullptr;
+    auto result = RegCreateKeyExW(HKEY_CURRENT_USER, workspaceKey, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                                 KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (result == ERROR_SUCCESS) {
+        result = RegSetValueExW(key, workspaceValue, 0, REG_BINARY, bytes.data(), static_cast<DWORD>(bytes.size()));
+        RegCloseKey(key);
+    }
+    if (result != ERROR_SUCCESS) status(window, L"Workspace applied. Windows could not save the local layout.");
+}
+
+void transferLayout(HWND window, bool save) {
+    constexpr wchar_t filter[] = L"Sonoravell layouts (*.sonoravell-layout)\0*.sonoravell-layout\0\0";
+    const auto path = selectFile(window, save, filter, L"sonoravell-layout");
+    if (path.empty()) return;
+    if (save) {
+        const auto bytes = encodeWorkspace(currentLayout());
+        const auto file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) throw std::runtime_error("Could not create a new layout. Choose a new filename.");
+        DWORD written = 0;
+        const bool ok = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) &&
+                        written == bytes.size() && FlushFileBuffers(file);
+        CloseHandle(file);
+        if (!ok) throw std::runtime_error("Could not finish writing the layout.");
+        status(window, L"Workspace layout saved.");
+        return;
+    }
+    std::array<std::uint8_t, WorkspaceBytes{}.size() + 1> bytes{};
+    std::ifstream stream(path, std::ios::binary);
+    stream.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
+    const auto saved = decodeWorkspace(std::span(bytes).first(static_cast<std::size_t>(stream.gcount())));
+    if (!saved || stream.bad()) throw std::runtime_error("Invalid or unsupported workspace layout.");
+    applyLayout(*saved);
+    changeLayout(window);
+}
+
 void execute(HWND window, int id) {
     if (id == commandId) { showCommands(window); return; }
     if (id == queryFocusId) { SetFocus(field(window, queryId)); return; }
-    if (id >= beginnerLayoutId && id <= mixLayoutId) {
-        const auto view = workspaceLayouts[id - beginnerLayoutId];
-        inspectorShown = view.inspector;
-        browserShown = view.browser;
-        mixerShown = view.mixer;
-        focused = false;
-        SetDlgItemTextW(window, focusId, L"Focus");
-        layout(window);
+    if (id >= beginnerLayoutId && id <= composeLayoutId) {
+        applyLayout(workspaceLayouts[id - beginnerLayoutId]);
+        changeLayout(window);
+        return;
+    }
+    if (id >= widerInspectorId && id <= narrowerBrowserId) {
+        const bool left = id == widerInspectorId || id == narrowerInspectorId;
+        auto& width = left ? inspectorWidth : browserWidth;
+        const bool grow = id == widerInspectorId || id == widerBrowserId;
+        width = std::clamp(grow ? width + panelWidthStep : width - panelWidthStep, defaultPanelWidth, maxPanelWidth);
+        changeLayout(window);
+        return;
+    }
+    if (id == saveLayoutId || id == openLayoutId) {
+        if (!capture.active()) transferLayout(window, id == saveLayoutId);
         return;
     }
     if (id == focusId || id == toggleInspectorId || id == toggleBrowserId || id == toggleMixerId || id == resetLayoutId) {
@@ -1218,11 +1308,10 @@ void execute(HWND window, int id) {
             if (id == toggleInspectorId) inspectorShown = focused || !inspectorShown;
             if (id == toggleBrowserId) browserShown = focused || !browserShown;
             if (id == toggleMixerId) mixerShown = focused || !mixerShown;
-            if (id == resetLayoutId) inspectorShown = browserShown = mixerShown = true;
+            if (id == resetLayoutId) applyLayout({});
             focused = false;
         }
-        SetDlgItemTextW(window, focusId, focused ? L"Full view" : L"Focus");
-        layout(window);
+        changeLayout(window);
         return;
     }
     if (id >= gridBeatId && id <= gridOffId) {
@@ -1529,7 +1618,9 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
     try {
         switch (event) {
         case WM_CREATE:
+            loadCurrentLayout();
             createWorkspace(window);
+            showLayout(window);
             return 0;
         case WM_GETMINMAXINFO: {
             auto* limits = reinterpret_cast<MINMAXINFO*>(lParam);
@@ -1659,11 +1750,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
     type.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     type.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     if (!RegisterClassW(&type)) return 1;
+    workspaceCheck = std::wstring_view(GetCommandLineW()).ends_with(L" --workspace-check");
     const auto window = CreateWindowExW(0, type.lpszClassName, L"Sonoravell Studio", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                          CW_USEDEFAULT, CW_USEDEFAULT, 1040, 700,
                                          nullptr, nullptr, instance, nullptr);
     if (!window) return 1;
-    if (std::wstring_view(GetCommandLineW()).ends_with(L" --workspace-check")) {
+    if (workspaceCheck) {
         if (!field(window, deviceId) ||
             resolveWindowsAudioEndpoint(AudioDirection::input, {}) != WAVE_MAPPER ||
             resolveWindowsAudioEndpoint(AudioDirection::output, {}) != WAVE_MAPPER) return 1;
@@ -1773,9 +1865,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const bool rewound = playFrom == 0 && project == beforeTransport && prepared == beforeMixer;
         execute(window, loopId);
         const bool transportOk = toggled && rewound && !loopPlayback;
+        execute(window, composeLayoutId);
+        const auto composed = currentLayout();
+        execute(window, widerInspectorId);
+        const auto wider = currentLayout();
+        execute(window, resetLayoutId);
+        const bool persistedLayoutOk = !composed.browser && composed.inspector && wider.inspectorWidth > composed.inspectorWidth &&
+            decodeWorkspace(encodeWorkspace(wider)) == wider && currentLayout() == WorkspaceLayout{} &&
+            project == beforeTransport && prepared == beforeMixer && IsWindowEnabled(field(window, stopId));
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
