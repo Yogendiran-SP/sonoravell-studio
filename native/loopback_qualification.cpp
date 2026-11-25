@@ -164,7 +164,7 @@ Project makeQualificationSession() {
         }
     }
     project.assets.push_back({1, "Loopback markers", std::move(stereo)});
-    project.tracks.push_back({1, "Loopback reference", Instrument::audio, false, 100, {}, {{1, 0}}});
+    project.tracks.push_back({1, "Loopback reference", Instrument::audio, false, 100, {}, {wholeAudioClip(1, project.assets.front(), 0)}});
     return project;
 }
 

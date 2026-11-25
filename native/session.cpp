@@ -73,8 +73,10 @@ SessionAudio::SessionAudio(const Project& project) {
         for (const auto& clip : track.clips) {
             const auto& audio = findAsset(project, clip.assetId).stereo;
             const auto start = static_cast<std::size_t>(frameAtTick(clip.tick, project.tempo)) * channelCount;
-            for (std::size_t sample = 0; sample < audio.size(); ++sample) {
-                samples[start + sample] += static_cast<float>(audio[sample] * (volume / 32768.));
+            const auto source = static_cast<std::size_t>(clip.sourceFrame) * channelCount;
+            const auto count = static_cast<std::size_t>(clip.frameCount) * channelCount;
+            for (std::size_t sample = 0; sample < count; ++sample) {
+                samples[start + sample] += static_cast<float>(audio[source + sample] * (volume / 32768.));
             }
         }
         for (const auto& note : track.notes) {

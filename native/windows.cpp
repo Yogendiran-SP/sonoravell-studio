@@ -238,7 +238,7 @@ void drawArrangement(HWND window) {
         }
         for (const auto& clip : track.clips) {
             const auto start = frameAtTick(clip.tick, project.tempo);
-            const auto frames = static_cast<unsigned>(findAsset(project, clip.assetId).stereo.size() / channelCount);
+            const auto frames = clip.frameCount;
             block(start, start + frames, RGB(82, 143, 207));
         }
         RECT line{panel.left + 5, top + rowHeight - 1, panel.right - 8, top + rowHeight};
@@ -500,7 +500,7 @@ void addAudio(HWND window, AudioAsset asset, unsigned tick) {
         throw std::runtime_error("The Session is at its track or audio source limit.");
     }
     const auto id = asset.id;
-    Track track{newIdFor(project.tracks), asset.name, Instrument::audio, false, 100, {}, {{id, tick}}};
+    Track track{newIdFor(project.tracks), asset.name, Instrument::audio, false, 100, {}, {wholeAudioClip(newAudioClipId(project), asset, tick)}};
     project.assets.push_back(std::move(asset));
     try {
         project.tracks.push_back(std::move(track));
@@ -1120,7 +1120,7 @@ void execute(HWND window, int id) {
         if (project.tracks.size() >= maxTracks) throw std::runtime_error("The Session is at its track limit.");
         const auto tick = beatInput(window, beatId, false);
         const auto& asset = project.assets[source];
-        project.tracks.push_back({newIdFor(project.tracks), asset.name, Instrument::audio, false, 100, {}, {{asset.id, tick}}});
+        project.tracks.push_back({newIdFor(project.tracks), asset.name, Instrument::audio, false, 100, {}, {wholeAudioClip(newAudioClipId(project), asset, tick)}});
         edit(window, [] { project.tracks.pop_back(); }, static_cast<int>(project.tracks.size() - 1));
         status(window, L"Placed an Audio Pool source on a new track.");
     } else if (id == addTrackId) {

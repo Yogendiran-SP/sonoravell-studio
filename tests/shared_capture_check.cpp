@@ -276,7 +276,7 @@ void checkQueueAndRecovery() {
           openProject(projectPath) == prior, "Capture interruption changed the prior Session or lost committed audio.");
     auto restored = prior;
     restored.assets.push_back({1, "Recovered", recovered.stereo});
-    restored.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {{1, recovered.startTick}}});
+    restored.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {wholeAudioClip(1, restored.assets.front(), recovered.startTick)}});
     const auto restoredPath = dir / "recovered.sonora";
     saveProject(restoredPath, restored);
     check(openProject(restoredPath) == restored, "The captured prefix failed to survive Session save and reopen.");

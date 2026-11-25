@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
 #endif
         Project song;
         song.assets.push_back({1, "Recovered", prefix.stereo});
-        song.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {{1, prefix.startTick}}});
+        song.tracks.push_back({1, "Recovered", Instrument::audio, false, 100, {}, {wholeAudioClip(1, song.assets.front(), prefix.startTick)}});
         const auto session = directory.path / "saved.sonora";
         saveProject(session, song);
         check(openProject(session) == song, "Recovered audio did not survive Session save and reopen.");

@@ -6,7 +6,7 @@ Audit date: 2026-11-24. The paired evidence increment starts at `b91b583a908a19f
 
 - C++20 Win32 native desktop app, CMake build, Linux/macOS core-library tests, and Windows packaged executable.
 - Editable local `Project` with tracks, MIDI notes, audio clips, basic tempo/volume/mute and an in-memory Audio Pool.
-- `.sonora` versioned local Session save/reopen; stereo embedded audio; staged file replacement; rejection of incompatible/corrupt project versions.
+- `.sonora` v2 saves independent clip IDs and bounded source ranges. The reader migrates v1 in memory and the writer preserves older Session files. See the [clip rules and parallel alpha gates](OFFLINE_DESKTOP_ALPHA.md).
 - PCM WAV import (16-bit mono/stereo, 44.1/48 kHz), simple resampling, placement of clips and use of the Audio Pool.
 - Single mono recording from the selected Windows input, finalized on Stop. The recording worker writes recoverable blocks to a local take journal. **Recover take…** restores the verified prefix when input or storage is interrupted.
 - Local Session autosave rotates two staged checkpoints per working Session. Restore opens a copy with its embedded audio.

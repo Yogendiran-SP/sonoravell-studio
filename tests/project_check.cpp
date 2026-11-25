@@ -77,7 +77,7 @@ int main() {
         check(song.assets.front().stereo == Samples{0, 0, 30104, 30104, 32767, 32767},
               "44.1 kHz mono import did not resample and duplicate channels correctly");
         song.tracks.push_back({3, "Keys", Instrument::keys, false, 75, {{0, 960, 64, 100}}, {}});
-        song.tracks.push_back({17, "Audio", Instrument::audio, false, 100, {}, {{9, 1920}}});
+        song.tracks.push_back({17, "Audio", Instrument::audio, false, 100, {}, {wholeAudioClip(1, song.assets.front(), 1920)}});
         saveProject(session, song);
         const auto reopened = openProject(session);
         check(reopened == song, "Replacing a Session lost edited MIDI or embedded audio");
