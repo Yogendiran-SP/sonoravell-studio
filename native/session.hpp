@@ -1,5 +1,6 @@
 #pragma once
 
+#include "effects.hpp"
 #include "mixer_parameters.hpp"
 #include "source_blocks.hpp"
 
@@ -31,7 +32,7 @@ std::vector<Note> afterHours();
 class SessionAudio {
 public:
     explicit SessionAudio(const Project& project, SourceStorage storage = SourceStorage::sparseBlocks);
-    Samples render(const MixerParameters& parameters) const;
+    Samples render(const MixerParameters& parameters, AudioBlockProcessor* effects = nullptr) const;
     std::size_t preparedBytes() const noexcept;
 
 private:
@@ -45,7 +46,7 @@ public:
     static constexpr unsigned rampFrames = sampleRate / 200;
 
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
-                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false);
+                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr);
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output) noexcept;
@@ -60,6 +61,7 @@ private:
     std::atomic<std::uint32_t>* peakMeter;
     MixerParameterMailbox* mailbox;
     bool loop;
+    AudioBlockProcessor* effects;
     struct Ramp {
         double value = 1.;
         double target = 1.;
