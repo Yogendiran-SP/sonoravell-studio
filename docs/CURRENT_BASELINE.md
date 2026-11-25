@@ -23,7 +23,7 @@ Physical hardware acceptance remains open.
 - An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
 - The offline [hardware qualification tool](HARDWARE_QUALIFICATION.md) generates the reference Session and WAV, matches returned markers, and reports displacement, drift, and invalid evidence. The physical report template keeps hardware gates pending until measured.
 - A finalized experimental duplex take can export qualified attempt clocks and a PCM fingerprint beside its journal. This supports a checked QPC-to-signal comparison in the offline tool.
-- Live track mute and solo ramps, stereo balance, master level and stereo output-buffer peaks. Native view presets change panel visibility independently of playback and Session state. Offline WAV export and CLI render use the Session mixer.
+- Live track volume, balance, mute, solo and master ramps with stereo output-buffer peaks. The render worker applies complete parameter snapshots without rebuilding its source audio. Native view presets change panel visibility independently of playback and Session state. Offline WAV export and CLI render use the Session mixer.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 
 Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/windows_wasapi_capture.cpp`, `native/audio_endpoints.hpp`, and the `tests` directory.
@@ -33,6 +33,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 - `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Independent Record stops playback. Experimental WASAPI recording with playback awaits physical qualification. Live monitoring and multitrack capture remain future work.
 - WASAPI render selection lasts for the app run. The picker refreshes on open, and Play looks up the chosen endpoint again. Physical routing, device loss and reconnection remain open acceptance tests.
 - Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Clock anchors are best-effort companion diagnostics saved when a WASAPI take finishes. Real driver timing, device loss, and recorded audio remain open acceptance tests.
+- Dry sources still use complete per-track buffers. Bounded source blocks and a renderer comparison are the next engine increment.
 - Current project limits are development caps: 16 tracks, 128 bars, 64 assets and fixed 48 kHz stereo internal sample representation; not a proof of scalable/unlimited DAW operation.
 - Only basic in-app MIDI note editing; no verified physical MIDI controller capture.
 - No demonstrated VST3/CLAP host, channel selection, latency measurement/xruns, professional hardware compatibility, full undo history, or portable legacy browser-project converter.

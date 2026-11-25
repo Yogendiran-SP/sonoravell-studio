@@ -109,7 +109,7 @@ struct Run final : CaptureSink {
     std::unique_ptr<TakeQueue> queue = std::make_unique<TakeQueue>();
     RenderEnd renderEnd{};
     CaptureStreamReport captureReport;
-    std::atomic<unsigned> muted{0}, played{0};
+    std::atomic<unsigned> played{0};
     std::jthread renderWorker, inputWorker;
 
     explicit Run(DuplexTransport& transport) : transport(transport) {}
@@ -130,7 +130,7 @@ struct Run final : CaptureSink {
         renderWorker = std::jthread([this, session](std::stop_token stop) {
             output.clock = StreamClock{44100, signals->attempt()};
             PlaybackMixer mixer(*session, {});
-            const auto report = renderShared(output, mixer, {}, muted, played, stop, &signals->renderStarted);
+            const auto report = renderShared(output, mixer, {}, played, stop, &signals->renderStarted);
             renderEnd = report.end;
             signals->renderExited(report.error);
             output.gates.done.release();

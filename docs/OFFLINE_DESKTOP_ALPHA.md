@@ -63,10 +63,10 @@ draft retains the redo branch. A new committed command after Undo discards
 that branch. Opening a Session or restoring a checkpoint starts fresh history.
 
 Move, trim, split, duplicate, delete, track, MIDI note, tempo, and available
-mixer changes go through the same history. Structural changes and level
-edits stop playback before replacing its prepared audio. Mute updates and
-their undo/redo still use the active worker's atomic mute controls. No edit
-or revision work occurs on the audio thread. Recording continues to lock
+mixer changes go through the same history. Structural changes stop playback
+before replacing its prepared audio. Mixer changes and their undo/redo keep
+the current prepared audio and transport position. No edit or revision work
+occurs on the audio thread. Recording continues to lock
 editing until its journal has settled.
 
 ## Arrangement
@@ -95,11 +95,12 @@ replace the playback snapshot.
 
 Each track has volume, stereo balance (Pan, −100 left through +100 right),
 mute, and solo. Mute takes precedence on any track. When one or more tracks
-are soloed, all other tracks are suppressed. Mute and solo use the existing
-bounded playback gain ramp. Volume, pan and master level are prepared into
-a new mixer snapshot and applying these edits stops playback. The master
-applies equally to both channels before PCM clipping. WAV export follows
-track mute/solo, balance and master level. The stereo meters show peaks from
+are soloed, all other tracks are suppressed. During playback every changed
+track channel or master gain ramps from its current value over 240 frames
+(5 ms at 48 kHz). A later edit retargets the ramp without a level jump.
+The master applies equally to both channels before PCM clipping. WAV
+export applies the current Session mixer values at full settled gain
+from the first frame. The stereo meters show peaks from
 recent mixed output buffers, including clipping at full scale. They do not
 read the input, measure interface levels or determine hardware latency.
 

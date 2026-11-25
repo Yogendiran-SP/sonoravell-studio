@@ -32,15 +32,15 @@ int main() {
         const auto split = project;
         history.execute(project, [](Project& draft) { draft.tracks[0].notes.push_back({0, 960, 50, 90}); });
         const auto note = project;
-        history.execute(project, [](Project& draft) { draft.tracks[0].muted = true; }, EditImpact::liveMute);
-        history.execute(project, [](Project& draft) { draft.tracks[1].volume = 40; });
+        history.execute(project, [](Project& draft) { draft.tracks[0].muted = true; }, EditImpact::liveMixer);
+        history.execute(project, [](Project& draft) { draft.tracks[1].volume = 40; }, EditImpact::liveMixer);
         const auto mixed = project;
         history.execute(project, [](Project& draft) { draft.tracks.pop_back(); });
         check(project.assets.size() == 1 && project.assets.front().stereo().data() == pcm,
               "Removing a track must keep its shared source audio.");
         check(history.undo(project) == EditImpact::rebuildAudio && project == mixed, "Undo track removal.");
-        check(history.undo(project) == EditImpact::rebuildAudio && project.tracks[1].volume == 100, "Undo level.");
-        check(history.undo(project) == EditImpact::liveMute && project == note, "Undo live mute.");
+        check(history.undo(project) == EditImpact::liveMixer && project.tracks[1].volume == 100, "Undo level.");
+        check(history.undo(project) == EditImpact::liveMixer && project == note, "Undo live mute.");
         check(history.undo(project) && project == split, "Undo note insertion.");
         check(history.undo(project) && project == imported && project.assets.front().stereo().data() == pcm, "Undo clip split.");
         check(history.undo(project) && project == blank && !history.undo(project), "Undo imported track and source.");

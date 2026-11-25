@@ -27,32 +27,37 @@ int main() {
     check(mix.size() == 1772308, "Unexpected demo playback length");
     check(mix == demo.render({}), "Render must repeat within the same build");
     check(std::ranges::any_of(mix, [](auto sample) { return sample != 0; }), "Mix is silent");
-    const auto silence = demo.render({true, true, true, true});
+    MixerParameters silent;
+    silent.master = 0.;
+    const auto silence = demo.render(silent);
     check(silence.size() == mix.size() && std::ranges::all_of(silence, [](auto sample) { return sample == 0; }),
           "Muting all tracks must preserve length and produce silence");
     for (unsigned track = 0; track < trackNames.size(); ++track) {
-        TrackMutes mutes{};
-        mutes[track] = true;
+        MixerParameters mutes;
+        mutes.tracks[track] = {0., 0.};
         check(demo.render(mutes) != mix, "Every track must contribute to the mix");
     }
 
     constexpr std::size_t blockFrames = 512;
     constexpr std::size_t blockSamples = blockFrames * channelCount;
-    constexpr std::size_t rampSamples = PlaybackMixer::muteRampFrames * channelCount;
-    const TrackMutes keysMuted{true, false, false, false};
+    constexpr std::size_t rampSamples = PlaybackMixer::rampFrames * channelCount;
+    MixerParameters keysMuted;
+    keysMuted.tracks[0] = {0., 0.};
     const auto withoutKeys = demo.render(keysMuted);
     Samples block(blockSamples);
     PlaybackMixer playback(demo, {});
-    check(playback.read(block, {}) == blockSamples && std::ranges::equal(block, std::span(mix).first(blockSamples)),
+    check(playback.read(block) == blockSamples && std::ranges::equal(block, std::span(mix).first(blockSamples)),
           "Playback starts at the original mix");
-    check(playback.read(block, keysMuted) == blockSamples, "Mute request continues playback");
+    playback.setParameters(keysMuted);
+    check(playback.read(block) == blockSamples, "Mute request continues playback");
     check(std::ranges::equal(std::span(block).first(channelCount),
                             std::span(mix).subspan(blockSamples, channelCount)),
           "Mute fade starts at the current gain");
     check(std::ranges::equal(std::span(block).subspan(rampSamples),
                             std::span(withoutKeys).subspan(blockSamples + rampSamples, blockSamples - rampSamples)),
           "Muted track drops out after the fade without moving the playhead");
-    check(playback.read(block, {}) == blockSamples, "Unmute request continues playback");
+    playback.setParameters({});
+    check(playback.read(block) == blockSamples, "Unmute request continues playback");
     check(std::ranges::equal(std::span(block).first(channelCount),
                             std::span(withoutKeys).subspan(2 * blockSamples, channelCount)),
           "Unmute fade starts at the current gain");
@@ -61,19 +66,19 @@ int main() {
           "Unmuting restores the original mix at the current playhead");
     std::size_t consumed = 3 * blockSamples;
     while (!playback.finished()) {
-        const auto count = playback.read(block, {});
+        const auto count = playback.read(block);
         check(count > 0 && std::ranges::equal(std::span(block).first(count), std::span(mix).subspan(consumed, count)),
               "Buffer order and final partial buffer preserve the original mix");
         consumed += count;
     }
-    check(consumed == mix.size() && playback.read(block, {}) == 0, "Playback ends exactly once");
+    check(consumed == mix.size() && playback.read(block) == 0, "Playback ends exactly once");
 
     PlaybackMixer seek(demo, {}, 4000);
-    check(seek.read(block, {}) == blockSamples &&
+    check(seek.read(block) == blockSamples &&
           std::ranges::equal(block, std::span(mix).subspan(4000 * channelCount, blockSamples)),
           "A playback start frame must match the original mix at that position");
     PlaybackMixer tooLate(demo, {}, mix.size());
-    check(tooLate.finished() && tooLate.read(block, {}) == 0, "Out-of-range start clamps to the end");
+    check(tooLate.finished() && tooLate.read(block) == 0, "Out-of-range start clamps to the end");
 
     std::ostringstream output;
     writeWave(output, mix);

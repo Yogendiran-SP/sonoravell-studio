@@ -5,16 +5,8 @@
 #include <limits>
 
 namespace sonoravell {
-TrackMutes decodeMuteMask(unsigned mask) noexcept {
-    static_assert(maxTracks <= std::numeric_limits<unsigned>::digits);
-    TrackMutes muted{};
-    for (std::size_t track = 0; track < muted.size(); ++track) muted[track] = (mask & (1u << track)) != 0;
-    return muted;
-}
-
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
-                                SharedRenderConfig config, const std::atomic<unsigned>& muteMask,
-                                std::atomic<unsigned>& played, std::stop_token stop,
+                                SharedRenderConfig config,                    std::atomic<unsigned>& played, std::stop_token stop,
                                 std::atomic<bool>* ready) noexcept {
     SharedRenderReport report;
     report.requestedFrames = config.requestedFrames;
@@ -29,7 +21,7 @@ SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& m
         std::span<std::int16_t> output;
         if (const auto error = endpoint.acquire(frames, output); error != RenderError::none) return error;
         if (output.size() != static_cast<std::size_t>(frames) * channelCount ||
-            mixer.read(output, decodeMuteMask(muteMask.load(std::memory_order_relaxed))) != output.size()) {
+            mixer.read(output) != output.size()) {
             endpoint.release(0);
             return RenderError::invalidBuffer;
         }

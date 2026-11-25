@@ -1,6 +1,6 @@
 #pragma once
 
-#include "project.hpp"
+#include "mixer_parameters.hpp"
 
 #include <array>
 #include <atomic>
@@ -23,8 +23,6 @@ struct Note {
 };
 
 inline constexpr std::array trackNames{L"Electric Keys", L"Sub Bass", L"Drum Machine", L"Glass Plucks"};
-using TrackMutes = std::array<bool, maxTracks>;
-TrackMutes trackMutes(const Project& project);
 
 // The After Hours score from Sonoravell Studio 1.0.2.
 std::vector<Note> afterHours();
@@ -32,23 +30,23 @@ std::vector<Note> afterHours();
 class SessionAudio {
 public:
     explicit SessionAudio(const Project& project);
-    Samples render(const TrackMutes& muted) const;
+    Samples render(const MixerParameters& parameters) const;
 
 private:
     friend class PlaybackMixer;
     std::vector<std::vector<float>> tracks;
     std::size_t sampleCount;
-    double masterGain;
 };
 
 class PlaybackMixer {
 public:
-    static constexpr unsigned muteRampFrames = sampleRate / 200;
+    static constexpr unsigned rampFrames = sampleRate / 200;
 
-    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame = 0,
-                  std::atomic<std::uint32_t>* peakMeter = nullptr);
+    PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
+                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr);
+    void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
-    std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
+    std::size_t read(std::span<std::int16_t> output) noexcept;
     bool finished() const noexcept;
     unsigned remainingFrames() const noexcept;
 
@@ -56,7 +54,17 @@ private:
     const SessionAudio& audio;
     std::size_t position = 0;
     std::atomic<std::uint32_t>* peakMeter;
-    std::array<unsigned, maxTracks> gains{};
+    MixerParameterMailbox* mailbox;
+    struct Ramp {
+        double value = 1.;
+        double target = 1.;
+        double step = 0.;
+        unsigned remaining = 0;
+        void set(double next) noexcept;
+        double next() noexcept;
+    };
+    std::array<std::array<Ramp, channelCount>, maxTracks> gains{};
+    Ramp master;
 };
 
 void writeWave(std::ostream& output, const Samples& samples);
