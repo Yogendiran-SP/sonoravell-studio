@@ -12,6 +12,7 @@
 #include "edit_history.hpp"
 #include "session.hpp"
 #include "playback_position.hpp"
+#include "piano_roll.hpp"
 #include "workspace_layout.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
@@ -52,7 +53,7 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId
 };
 
 Project project = afterHoursProject();
@@ -94,6 +95,18 @@ struct ClipDrag {
     bool moved = false;
 };
 std::optional<ClipDrag> clipDrag;
+bool pianoRoll = false;
+unsigned rollLowestPitch = 48;
+struct NoteDrag {
+    int track;
+    std::size_t index;
+    MidiNote initial;
+    MidiNote preview;
+    int startX;
+    int startY;
+    bool resize;
+};
+std::optional<NoteDrag> noteDrag;
 struct CachedWaveform {
     AudioAsset asset;
     WaveformPeaks peaks;
@@ -355,6 +368,80 @@ void drawWaveform(HDC dc, RECT rect, const AudioClip& clip) {
     SelectObject(dc, oldPen);
 }
 
+RECT noteBox(const RECT& panel, const MidiNote& note) {
+    const auto top = panel.top + 58;
+    const auto height = panel.bottom - top;
+    const auto row = rollPitchCount - 1 - (static_cast<int>(note.pitch) - static_cast<int>(rollLowestPitch));
+    const auto left = timelineX(panel, frameAtTick(note.tick, project.tempo));
+    const auto right = timelineX(panel, frameAtTick(note.tick + note.length, project.tempo));
+    return {left, top + row * height / rollPitchCount, std::max(left + 2, right),
+            top + (row + 1) * height / rollPitchCount};
+}
+
+const Track* rollTrack(HWND window) {
+    const int index = selectedTrack(window);
+    if (index < 0 || index >= static_cast<int>(project.tracks.size())) return nullptr;
+    const auto& track = project.tracks[index];
+    return track.instrument == Instrument::audio ? nullptr : &track;
+}
+
+std::optional<std::size_t> hitNote(HWND window, POINT point) {
+    const auto panel = arrangeRect(window);
+    const auto* track = rollTrack(window);
+    if (!track || point.x < panel.left + 102 || point.x >= panel.right - 8 || point.y < panel.top + 58 ||
+        point.y >= panel.bottom) return {};
+    for (std::size_t i = track->notes.size(); i != 0; --i) {
+        const auto box = noteBox(panel, track->notes[i - 1]);
+        if (PtInRect(&box, point)) return i - 1;
+    }
+    return {};
+}
+
+void drawPianoRoll(HWND window, HDC dc, RECT panel) {
+    const int left = panel.left + 102;
+    const int top = panel.top + 58;
+    const auto* track = rollTrack(window);
+    constexpr wchar_t hint[] = L"Piano Roll   /   Ctrl+P to return";
+    TextOutW(dc, panel.left + 8, panel.top + 7, hint, static_cast<int>(std::size(hint) - 1));
+    if (!track) {
+        constexpr wchar_t select[] = L"Select an instrument track.";
+        TextOutW(dc, panel.left + 8, top, select, static_cast<int>(std::size(select) - 1));
+        return;
+    }
+    for (int row = 0; row < rollPitchCount; ++row) {
+        const auto pitch = rollLowestPitch + rollPitchCount - 1 - row;
+        const auto name = std::to_wstring(pitch);
+        const RECT band{panel.left + 4, top + row * (panel.bottom - top) / rollPitchCount,
+                        panel.right - 8, top + (row + 1) * (panel.bottom - top) / rollPitchCount};
+        if (pitch % 12 == 1 || pitch % 12 == 3 || pitch % 12 == 6 || pitch % 12 == 8 || pitch % 12 == 10) {
+            FillRect(dc, &band, GetSysColorBrush(COLOR_3DLIGHT));
+        }
+        if (pitch % 12 == 0) TextOutW(dc, left - 38, band.top, name.c_str(), static_cast<int>(name.size()));
+    }
+    const auto ticks = timelineEndTick();
+    const auto step = std::max(ticksPerBeat, gridSteps[gridIndex]);
+    int priorX = left - 7;
+    for (unsigned tick = 0; tick < ticks; tick += step) {
+        const auto x = timelineX(panel, frameAtTick(tick, project.tempo));
+        if (x - priorX < 7) continue;
+        const RECT line{x, top, x + 1, panel.bottom};
+        FillRect(dc, &line, GetSysColorBrush(COLOR_3DSHADOW));
+        priorX = x;
+        if (tick % (beatsPerBar * ticksPerBeat) == 0) {
+            const auto label = std::to_wstring(tick / (beatsPerBar * ticksPerBeat) + 1);
+            TextOutW(dc, x + 3, panel.top + 37, label.c_str(), static_cast<int>(label.size()));
+        }
+    }
+    const auto selection = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
+    for (std::size_t i = 0; i < track->notes.size(); ++i) {
+        const auto& note = noteDrag && noteDrag->track == selectedTrack(window) && noteDrag->index == i
+            ? noteDrag->preview : track->notes[i];
+        if (note.pitch < rollLowestPitch || note.pitch >= rollLowestPitch + rollPitchCount) continue;
+        const auto box = noteBox(panel, note);
+        fill(dc, box, static_cast<std::size_t>(selection) == i ? RGB(30, 91, 157) : RGB(72, 80 + note.velocity, 151));
+    }
+}
+
 void drawArrangement(HWND window) {
     PAINTSTRUCT paint{};
     const auto dc = BeginPaint(window, &paint);
@@ -378,6 +465,16 @@ void drawArrangement(HWND window) {
         return timelineX(panel, frame);
     };
     SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+    if (pianoRoll) {
+        drawPianoRoll(window, dc, panel);
+        const auto cursor = playbackFrame(totalFrames, playFrom,
+            audio.state() == Output::State::playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active());
+        const auto x = timelineX(panel, cursor);
+        fill(dc, {x, ruler.top, x + 1, panel.bottom}, RGB(220, 105, 39));
+        RestoreDC(dc, savedDc);
+        EndPaint(window, &paint);
+        return;
+    }
     constexpr std::array gridLabels{L"Grid off", L"Grid 1 beat", L"Grid 1/4 beat", L"Grid 1/16 beat"};
     const std::wstring title = std::wstring(L"Arrange  |  ") + gridLabels[gridIndex];
     TextOutW(dc, panel.left + 8, panel.top + 7, title.c_str(), static_cast<int>(title.size()));
@@ -801,7 +898,9 @@ void showCommands(HWND window) {
          {recordLayoutId, L"Layout: Recording"}, {composeLayoutId, L"Layout: Composition"},
          {widerInspectorId, L"Layout: Widen Inspector"}, {narrowerInspectorId, L"Layout: Narrow Inspector"},
          {widerBrowserId, L"Layout: Widen Browser"}, {narrowerBrowserId, L"Layout: Narrow Browser"},
-         {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."}}) {
+         {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."},
+         {pianoRollId, L"Toggle Piano Roll"}, {velocityUpId, L"Increase selected MIDI velocity"},
+         {velocityDownId, L"Decrease selected MIDI velocity"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
         const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId;
@@ -1342,8 +1441,89 @@ void stageClipDrag(const AudioClip& clip, const RECT& box, int x) {
     clipDrag = ClipDrag{clip.id, operation, anchor, x, anchor};
 }
 
+void clearNoteDrag(HWND window) {
+    if (!noteDrag) return;
+    noteDrag.reset();
+    if (GetCapture() == window) ReleaseCapture();
+    const auto panel = arrangeRect(window);
+    InvalidateRect(window, &panel, FALSE);
+}
+
+void selectRollNote(HWND window, std::size_t index) {
+    SendMessageW(field(window, noteListId), CB_SETCURSEL, index, 0);
+    pickNote(window);
+}
+
+void pianoPress(HWND window, POINT point) {
+    if (capture.active() || !rollTrack(window)) return;
+    const auto panel = arrangeRect(window);
+    const auto top = panel.top + 58;
+    const int left = panel.left + 102;
+    const int width = panel.right - left - 8;
+    if (point.x < left || point.x >= left + width || point.y < top || point.y >= panel.bottom) return;
+    const int index = selectedTrack(window);
+    if (const auto hit = hitNote(window, point)) {
+        const auto note = project.tracks[index].notes[*hit];
+        const auto box = noteBox(panel, note);
+        noteDrag = NoteDrag{index, *hit, note, note, point.x, point.y,
+                            box.right - box.left >= 12 && point.x >= box.right - 5};
+        selectRollNote(window, *hit);
+        SetFocus(window);
+        SetCapture(window);
+        if (GetCapture() != window) clearNoteDrag(window);
+        InvalidateRect(window, &panel, FALSE);
+        return;
+    }
+    const auto projected = (static_cast<std::uint64_t>(point.x - left) * timelineEndTick() + width / 2) / width;
+    const auto tick = snapTimelineTick(static_cast<unsigned>(projected), maxTimelineTick, gridSteps[gridIndex]);
+    const auto length = std::min(gridSteps[gridIndex] ? gridSteps[gridIndex] : ticksPerBeat / 4, maxTimelineTick - tick);
+    const auto pitch = rollPitchAt(point.y - top, panel.bottom - top, rollLowestPitch);
+    const auto noteIndex = project.tracks[index].notes.size();
+    edit(window, [&](Project& draft) { draft.tracks[index].notes.push_back({tick, length, static_cast<std::uint8_t>(pitch), 96}); }, index);
+    selectRollNote(window, noteIndex);
+    SetFocus(window);
+}
+
+void updateNoteDrag(HWND window, int x, int y) {
+    if (!noteDrag) return;
+    const auto panel = arrangeRect(window);
+    const auto top = panel.top + 58;
+    const auto initial = noteDrag->initial;
+    const auto startTick = noteDrag->resize ? initial.tick + initial.length : initial.tick;
+    const auto dx = x - noteDrag->startX;
+    const auto tick = dragTimelineTick(startTick, std::abs(dx) < 3 ? 0 : dx, panel.right - panel.left - 110,
+                                       timelineEndTick(), maxTimelineTick + 1, gridSteps[gridIndex]);
+    const auto originPitch = rollPitchAt(noteDrag->startY - top, panel.bottom - top, rollLowestPitch);
+    const auto pointerPitch = rollPitchAt(y - top, panel.bottom - top, rollLowestPitch);
+    const auto pitch = std::abs(y - noteDrag->startY) < 3 ? initial.pitch
+        : std::clamp(static_cast<int>(initial.pitch + pointerPitch) - static_cast<int>(originPitch), 0, 127);
+    noteDrag->preview = rollNoteEdit(initial, tick, pitch, noteDrag->resize);
+    InvalidateRect(window, &panel, FALSE);
+}
+
+void editVelocity(HWND window, std::size_t note, int steps) {
+    const auto* track = rollTrack(window);
+    if (!track || note >= track->notes.size() || capture.active()) return;
+    const int index = selectedTrack(window);
+    edit(window, [=](Project& draft) { changeVelocity(draft.tracks[index].notes[note], steps); }, index);
+    selectRollNote(window, note);
+    status(window, (L"Velocity " + std::to_wstring(project.tracks[index].notes[note].velocity)).c_str());
+}
+
 void execute(HWND window, int id) {
     clearClipDrag(window);
+    clearNoteDrag(window);
+    if (id == pianoRollId) {
+        pianoRoll = !pianoRoll;
+        const auto panel = arrangeRect(window);
+        InvalidateRect(window, &panel, FALSE);
+        return;
+    }
+    if (id == velocityUpId || id == velocityDownId) {
+        const auto note = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
+        if (note >= 0) editVelocity(window, static_cast<std::size_t>(note), id == velocityUpId ? 1 : -1);
+        return;
+    }
     if (id == commandId) { showCommands(window); return; }
     if (id == queryFocusId) { SetFocus(field(window, queryId)); return; }
     if (id >= beginnerLayoutId && id <= composeLayoutId) {
@@ -1690,6 +1870,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         }
         case WM_SIZE:
             clearClipDrag(window);
+            clearNoteDrag(window);
             layout(window);
             return 0;
         case WM_DRAWITEM:
@@ -1702,9 +1883,20 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             drawArrangement(window);
             return 0;
         case WM_MOUSEMOVE:
+            if (noteDrag) { updateNoteDrag(window, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); return 0; }
             if (clipDrag) { updateClipDrag(window, GET_X_LPARAM(lParam)); return 0; }
             break;
         case WM_LBUTTONUP:
+            if (noteDrag) {
+                updateNoteDrag(window, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                const auto drag = *noteDrag;
+                clearNoteDrag(window);
+                if (!capture.active() && drag.initial != drag.preview) {
+                    edit(window, [=](Project& draft) { draft.tracks[drag.track].notes[drag.index] = drag.preview; }, drag.track);
+                    selectRollNote(window, drag.index);
+                }
+                return 0;
+            }
             if (clipDrag) {
                 updateClipDrag(window, GET_X_LPARAM(lParam));
                 const auto drag = *clipDrag;
@@ -1720,9 +1912,40 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         case WM_CAPTURECHANGED:
         case WM_CANCELMODE:
             clearClipDrag(window);
+            clearNoteDrag(window);
             break;
         case WM_KEYDOWN:
-            if (wParam == VK_ESCAPE && clipDrag) { clearClipDrag(window); return 0; }
+            if (wParam == VK_ESCAPE && (clipDrag || noteDrag)) {
+                clearClipDrag(window);
+                clearNoteDrag(window);
+                return 0;
+            }
+            if (pianoRoll && wParam == VK_DELETE) { execute(window, deleteNoteId); return 0; }
+            break;
+        case WM_RBUTTONDOWN:
+            if (pianoRoll && !capture.active()) {
+                if (const auto note = hitNote(window, {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)})) {
+                    selectRollNote(window, *note);
+                    execute(window, deleteNoteId);
+                }
+                return 0;
+            }
+            break;
+        case WM_MOUSEWHEEL:
+            if (pianoRoll && !noteDrag) {
+                const auto steps = GET_WHEEL_DELTA_WPARAM(wParam) / WHEEL_DELTA;
+                if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL) {
+                    rollLowestPitch = static_cast<unsigned>(std::clamp(static_cast<int>(rollLowestPitch) + 12 * steps,
+                                                                        0, 128 - rollPitchCount));
+                    const auto panel = arrangeRect(window);
+                    InvalidateRect(window, &panel, FALSE);
+                } else {
+                    POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                    ScreenToClient(window, &point);
+                    if (const auto note = hitNote(window, point); note && steps) editVelocity(window, *note, steps);
+                }
+                return 0;
+            }
             break;
         case WM_LBUTTONDOWN: {
             const auto panel = arrangeRect(window);
@@ -1737,6 +1960,8 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 playFrom = std::min(totalFrames - 1, frameAtTick(ticks, project.tempo));
                 if (audio.state() == Output::State::playing) startPlayback(window);
                 InvalidateRect(window, &panel, FALSE);
+            } else if (pianoRoll) {
+                pianoPress(window, {x, y + panel.top + 58});
             } else if (x >= panel.left && x < panel.right && y >= 0 && y < panel.bottom - panel.top - 58) {
                 const int index = y / arrangementRowHeight(panel);
                 if (index < static_cast<int>(project.tracks.size())) {
@@ -1988,14 +2213,26 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(xClip + 35, laneTop + 7));
         SendMessageW(window, WM_CANCELMODE, 0, 0);
         const bool dragCancelled = !clipDrag && project == beforeDrag;
+        SendMessageW(field(window, trackListId), CB_SETCURSEL, 0, 0);
+        refreshTrack(window);
+        execute(window, pianoRollId);
+        const auto pianoArea = arrangeRect(window);
+        const int pianoX = pianoArea.left + 155;
+        const int pianoY = pianoArea.top + 80;
+        SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(pianoX, pianoY));
+        const bool created = project.tracks[0].notes.size() == 1;
+        execute(window, velocityUpId);
+        const bool velocityOk = created && project.tracks[0].notes.front().velocity == 104;
+        execute(window, deleteNoteId);
+        const bool pianoOk = pianoRoll && velocityOk && project.tracks[0].notes.empty();
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk && dragCancelled ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk && dragCancelled && pianoOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
                          {FVIRTKEY | FCONTROL | FSHIFT, 'Z', redoId}, {FVIRTKEY | FCONTROL, VK_SPACE, playId},
-                         {FVIRTKEY | FCONTROL, VK_HOME, rewindId}, {FVIRTKEY | FCONTROL, 'O', openId},
+                         {FVIRTKEY | FCONTROL, VK_HOME, rewindId}, {FVIRTKEY | FCONTROL, 'P', pianoRollId}, {FVIRTKEY | FCONTROL, 'O', openId},
                          {FVIRTKEY | FCONTROL | FSHIFT, 'S', saveId}, {FVIRTKEY | FCONTROL, 'F', queryFocusId}};
     const auto accelerator = CreateAcceleratorTableW(shortcuts, static_cast<int>(std::size(shortcuts)));
     MSG message{};
