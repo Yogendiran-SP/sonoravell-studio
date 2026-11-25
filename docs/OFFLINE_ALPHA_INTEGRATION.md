@@ -58,3 +58,20 @@ unequal render blocks, muted track tails, cold seek, loop boundaries,
 bounded allocations at preparation, legacy migration, rejected writes,
 malformed payloads, autosave and recording regressions. Timing under
 device load, audible seams and physical recovery remain acceptance items.
+
+## Arrangement and Piano Roll navigation
+
+EDIT-01, EDIT-02 and UX-10. Arrangement and Piano Roll share a frame-based
+timeline viewport. Use Commands to zoom, scroll, or Fit Session timeline.
+Ctrl+Page Up and Ctrl+Page Down zoom about the visible playhead, or the
+viewport center when it is outside the view. Both views use the same
+mapping for the ruler, waveform visibility, clip hit-testing and edits.
+Zoom and scroll preserve the Session and prepared audio.
+
+Drag the body of an audio clip into another audio track to move it in
+one undoable operation. The clip keeps its ID, asset and source range.
+Instrument-track drops are rejected. The existing trim handles keep the
+clip on its original track. With the Piano Roll focused after selecting
+a note, arrows nudge time or pitch and Shift+Left/Right changes duration.
+These actions use the current grid, or one tick when the grid is Off.
+No Session format change is required.
