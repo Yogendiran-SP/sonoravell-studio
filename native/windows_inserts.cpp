@@ -170,7 +170,7 @@ LRESULT CALLBACK editorProcedure(HWND window, UINT message, WPARAM w, LPARAM l) 
 }
 }
 
-void showInsertEditor(HWND owner, const InsertList& list, EditInsert edit) {
+void showInsertEditor(HWND owner, const wchar_t* title, const InsertList& list, EditInsert edit) {
     if (!editor) {
         constexpr wchar_t name[] = L"SonoravellInsertEditor";
         WNDCLASSW wc{};
@@ -182,15 +182,23 @@ void showInsertEditor(HWND owner, const InsertList& list, EditInsert edit) {
         if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
             throw std::runtime_error("Could not initialize the Effects window.");
         }
-        editor = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_CONTROLPARENT, name, L"Master Effects",
+        editor = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_CONTROLPARENT, name, title,
                                  WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
                                  CW_USEDEFAULT, CW_USEDEFAULT, 364, 242, owner, nullptr, wc.hInstance, nullptr);
         if (!editor) throw std::runtime_error("Could not open the Effects window.");
     }
+    SetWindowTextW(editor, title);
     commit = std::move(edit);
+    selection = 0;
     refreshInsertEditor(list, true);
     ShowWindow(editor, SW_SHOW);
     SetFocus(GetDlgItem(editor, insertList));
+}
+
+void hideInsertEditor() noexcept {
+    if (editor) ShowWindow(editor, SW_HIDE);
+    commit = {};
+    selection = 0;
 }
 
 void refreshInsertEditor(const InsertList& list, bool canEdit) {
