@@ -176,7 +176,7 @@ void showInsertEditor(HWND owner, const InsertList& list, EditInsert edit) {
         WNDCLASSW wc{};
         wc.lpfnWndProc = editorProcedure;
         wc.hInstance = GetModuleHandleW(nullptr);
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
         wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
         wc.lpszClassName = name;
         if (!RegisterClassW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
