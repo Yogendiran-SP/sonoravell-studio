@@ -110,15 +110,18 @@ public:
             requestStop();
             worker.join();
         }
+        insertRack.reset();
         peakMeter.store(0, std::memory_order_relaxed);
         playbackState.store(State::stopped);
     }
 
     void setMixer(const MixerParameters& parameters) noexcept { mixerParameters.publish(parameters); }
 
-    void play(std::shared_ptr<const SessionAudio> session, unsigned startFrame, unsigned deviceId,
+    void play(std::shared_ptr<const SessionAudio> session, std::unique_ptr<PreparedInserts> nextInserts,
+              unsigned startFrame, unsigned deviceId,
               std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, bool loop = false, bool click = false) {
         stop();
+        insertRack = std::move(nextInserts);
         lastUsedWasapi = wasapi.has_value();
         if (wasapi) wasapiRun.reset();
         played.store(0);
@@ -127,6 +130,7 @@ public:
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
                                    wasapi = std::move(wasapi), duplex = std::move(duplex), loop, click](std::stop_token stopToken) mutable {
                 PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, loop && !duplex, nullptr, click && !duplex);
+                mixer.attachInserts(insertRack.get());
                 if (wasapi) {
                     wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), played, stopToken,
                                                 duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
@@ -149,6 +153,7 @@ public:
 
 private:
     MixerParameterMailbox mixerParameters;
+    std::unique_ptr<PreparedInserts> insertRack;
     std::atomic<std::uint64_t> played{0};
     std::atomic<std::uint32_t> peakMeter{0};
     std::atomic<State> playbackState{State::stopped};

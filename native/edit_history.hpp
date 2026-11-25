@@ -8,7 +8,7 @@
 #include <utility>
 
 namespace sonoravell {
-enum class EditImpact { rebuildAudio, liveMixer };
+enum class EditImpact { rebuildAudio, liveMixer, restartProcessing };
 
 class EditHistory {
 public:

@@ -15,6 +15,8 @@ struct StereoGain {
 struct MixerParameters {
     std::array<StereoGain, maxTracks> tracks{};
     double master = 1.;
+    unsigned masterBypass = 0;
+    std::array<unsigned, maxTracks> trackBypass{};
     bool operator==(const MixerParameters&) const = default;
 };
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/metronome.cpp native/piano_roll.cpp native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
+add_library(sonoravell_engine native/inserts.cpp native/insert_processing.cpp native/metronome.cpp native/piano_roll.cpp native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
   native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp native/clip_edit.cpp
   native/edit_history.cpp)
@@ -14,7 +14,7 @@ add_executable(sonoravell-qualify native/qualify_cli.cpp)
 target_link_libraries(sonoravell-qualify PRIVATE sonoravell_engine)
 
 if(WIN32)
-  add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_capture.cpp native/windows_devices.cpp
+  add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_inserts.cpp native/windows_capture.cpp native/windows_devices.cpp
     native/windows_wasapi.cpp native/windows_wasapi_capture.cpp native/windows_wasapi_endpoints.cpp)
   target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32 gdi32 ole32 advapi32)
   install(TARGETS SonoravellStudio sonoravell-render sonoravell-qualify RUNTIME DESTINATION .)
@@ -47,6 +47,9 @@ if(BUILD_TESTING)
   add_executable(piano_roll_check tests/piano_roll_check.cpp)
   target_link_libraries(piano_roll_check PRIVATE sonoravell_engine)
   add_test(NAME piano_roll_check COMMAND piano_roll_check)
+  add_executable(inserts_check tests/inserts_check.cpp)
+  target_link_libraries(inserts_check PRIVATE sonoravell_engine)
+  add_test(NAME inserts_check COMMAND inserts_check)
   add_executable(effects_check tests/effects_check.cpp)
   target_link_libraries(effects_check PRIVATE sonoravell_engine)
   add_test(NAME effects_check COMMAND effects_check)

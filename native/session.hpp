@@ -1,6 +1,6 @@
 #pragma once
 
-#include "effects.hpp"
+#include "insert_processing.hpp"
 #include "mixer_parameters.hpp"
 #include "metronome.hpp"
 #include "source_blocks.hpp"
@@ -35,6 +35,7 @@ class SessionAudio {
 public:
     explicit SessionAudio(const Project& project, SourceStorage storage = SourceStorage::sparseBlocks);
     Samples render(const MixerParameters& parameters, AudioBlockProcessor* effects = nullptr) const;
+    Samples renderProject(const Project& project) const;
     std::size_t preparedBytes() const noexcept;
 
 private:
@@ -50,6 +51,7 @@ public:
 
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
                   std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr, bool click = false);
+    void attachInserts(PreparedInserts* prepared) noexcept { inserts = prepared; }
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output) noexcept;
@@ -65,6 +67,7 @@ private:
     MixerParameterMailbox* mailbox;
     bool loop;
     AudioBlockProcessor* effects;
+    PreparedInserts* inserts = nullptr;
     bool click;
     struct Ramp {
         double value = 1.;
