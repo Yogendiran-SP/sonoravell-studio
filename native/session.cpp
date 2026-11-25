@@ -112,9 +112,9 @@ SessionAudio::SessionAudio(const Project& project, SourceStorage storage) {
     }
 }
 
-Samples SessionAudio::render(const MixerParameters& parameters) const {
+Samples SessionAudio::render(const MixerParameters& parameters, AudioBlockProcessor* effects) const {
     Samples samples(sampleCount);
-    PlaybackMixer(*this, parameters).read(samples);
+    PlaybackMixer(*this, parameters, 0, nullptr, nullptr, false, effects).read(samples);
     return samples;
 }
 
@@ -140,9 +140,11 @@ double PlaybackMixer::Ramp::next() noexcept {
 }
 
 PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial, std::size_t startFrame,
-                             std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox, bool loop)
+                             std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox, bool loop,
+                             AudioBlockProcessor* effects)
     : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount),
-      peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), master{initial.master, initial.master} {
+      peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), effects(effects),
+      master{initial.master, initial.master} {
     if (this->loop && position == audio.sampleCount) position = 0;
     for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
         const auto gain = initial.tracks[track];
@@ -182,6 +184,7 @@ void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, 
     for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
         sources[track] = audio.tracks[track].block(index);
     }
+    std::array<double, sourceBlockSamples> scratch;
     for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {
         double frame[channelCount]{};
         for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
@@ -190,9 +193,13 @@ void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, 
                 if (sources[track]) frame[channel] += sources[track][first + offset + channel] * gain;
             }
         }
+        for (unsigned channel = 0; channel < channelCount; ++channel) scratch[offset + channel] = frame[channel];
+    }
+    if (effects) effects->process(std::span(scratch).first(output.size()));
+    for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {
         const auto masterGain = master.next();
         for (unsigned channel = 0; channel < channelCount; ++channel) {
-            const auto sample = std::lround(std::clamp(frame[channel] * masterGain, -1., 1.) * 32767);
+            const auto sample = std::lround(std::clamp(scratch[offset + channel] * masterGain, -1., 1.) * 32767);
             output[offset + channel] = static_cast<std::int16_t>(sample);
             if (peakMeter) peaks[channel] = std::max(peaks[channel], static_cast<unsigned>(std::abs(sample)));
         }

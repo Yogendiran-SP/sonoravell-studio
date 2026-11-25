@@ -126,3 +126,30 @@ unsupported versions. Native workspace smoke verifies resize and reset
 while retaining the same Session, snapshot and enabled Stop. Docking,
 floating panels, accessibility walkthrough and usability acceptance remain
 separate work.
+
+## Internal processing stage
+
+DSP-01, DSP-02 and ENG-09. The mixer accepts an optional, render-owner
+stereo processor before master gain, PCM conversion and metering. It receives at most 256
+frames at a time through reused fixed stack storage. InternalEffects
+implements gain, a peaking biquad EQ, linked peak-detection compression
+and a stereo feedback delay. Filter coefficients, detector coefficients
+and delay storage are prepared before processing. The feedback magnitude
+is capped at 0.9 and the delay buffer at two seconds (1,536,000 bytes at
+48 kHz with two double channels). The processing loop does no allocation,
+locking or I/O. The compressor can evaluate one power per frame above
+threshold. Hardware callback time with effects requires separate evidence.
+
+The initial effect settings are fixed for each prepared instance. Bypass
+ramps over 240 frames and retains DSP state. Reset clears filters,
+detector and delay off the processing path. Use a fresh or reset instance
+for a seek or new render when deterministic output from that point is
+required. One-shot renders end at the Session boundary, so add arrangement
+space if tail audio needs to be included in an internal render.
+
+The deterministic checks cover invalid settings, gain, EQ response,
+linked compression, expected echoes, bypass, reset and PCM equivalence
+with unequal block sizes. Native projects and the desktop renderer still
+use dry defaults. User-facing insertion, per-track routing, persisted
+effects, automation, real-time editing of effect settings and third-party
+hosting require later increments with lifecycle and licensing reviews.

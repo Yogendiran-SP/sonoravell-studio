@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
+add_library(sonoravell_engine native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
   native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp native/clip_edit.cpp
   native/edit_history.cpp)
@@ -41,6 +41,9 @@ if(BUILD_TESTING)
   target_link_libraries(arrangement_check PRIVATE sonoravell_engine)
   add_test(NAME arrangement_check COMMAND arrangement_check)
 
+  add_executable(effects_check tests/effects_check.cpp)
+  target_link_libraries(effects_check PRIVATE sonoravell_engine)
+  add_test(NAME effects_check COMMAND effects_check)
   add_executable(workspace_layout_check tests/workspace_layout_check.cpp)
   target_link_libraries(workspace_layout_check PRIVATE sonoravell_engine)
   add_test(NAME workspace_layout_check COMMAND workspace_layout_check)
