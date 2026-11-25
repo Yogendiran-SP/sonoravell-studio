@@ -1,0 +1,6 @@
+#pragma once
+
+namespace sonoravell {
+inline constexpr wchar_t candidateVersion[] = L"@SONORAVELL_CANDIDATE_VERSION@";
+inline constexpr wchar_t sourceCommit[] = L"@SONORAVELL_SOURCE_COMMIT@";
+}

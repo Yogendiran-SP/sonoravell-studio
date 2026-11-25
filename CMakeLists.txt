@@ -1,5 +1,38 @@
 cmake_minimum_required(VERSION 3.20)
-project(SonoravellStudio LANGUAGES CXX)
+project(SonoravellStudio VERSION 0.1.0 LANGUAGES CXX)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set(SONORAVELL_CANDIDATE_VERSION "${PROJECT_VERSION}-alpha-candidate")
+set(SONORAVELL_SOURCE_COMMIT "" CACHE STRING "Exact Git source commit for candidate provenance")
+
+if(WIN32)
+  set(SONORAVELL_SOURCE_TREE "unknown")
+  find_package(Git QUIET)
+  if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse "HEAD^{tree}"
+      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE SONORAVELL_SOURCE_TREE
+      OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    if(SONORAVELL_SOURCE_COMMIT)
+      string(LENGTH "${SONORAVELL_SOURCE_COMMIT}" COMMIT_LENGTH)
+      if(NOT COMMIT_LENGTH EQUAL 40 OR NOT SONORAVELL_SOURCE_COMMIT MATCHES "^[0-9a-f]+$")
+        message(FATAL_ERROR "A candidate source commit must be a full Git SHA.")
+      endif()
+      execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse "${SONORAVELL_SOURCE_COMMIT}^{tree}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE EXPECTED_TREE
+        OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+      if(NOT "${EXPECTED_TREE}" STREQUAL "${SONORAVELL_SOURCE_TREE}")
+        message(FATAL_ERROR "Candidate source tree differs from the checked-out source.")
+      endif()
+    else()
+      execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE SONORAVELL_SOURCE_COMMIT
+        OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    endif()
+  else()
+    set(SONORAVELL_SOURCE_COMMIT "unknown")
+  endif()
+  configure_file(native/candidate_build.hpp.in generated/candidate_build.hpp @ONLY)
+  configure_file(scripts/BUILD-INFO.txt.in generated/BUILD-INFO.txt @ONLY)
+endif()
 
 add_library(sonoravell_engine native/atomic_output.cpp native/instruments.cpp native/fader_automation.cpp native/inserts.cpp native/insert_processing.cpp native/metronome.cpp native/piano_roll.cpp native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
@@ -16,9 +49,10 @@ target_link_libraries(sonoravell-qualify PRIVATE sonoravell_engine)
 if(WIN32)
   add_executable(SonoravellStudio WIN32 native/windows.cpp native/windows_inserts.cpp native/windows_capture.cpp native/windows_devices.cpp
     native/windows_wasapi.cpp native/windows_wasapi_capture.cpp native/windows_wasapi_endpoints.cpp)
+  target_include_directories(SonoravellStudio PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
   target_link_libraries(SonoravellStudio PRIVATE sonoravell_engine winmm comdlg32 gdi32 ole32 advapi32)
   install(TARGETS SonoravellStudio sonoravell-render sonoravell-qualify RUNTIME DESTINATION .)
-  install(FILES README.md LICENSE DESTINATION .)
+  install(FILES README.md LICENSE "${CMAKE_CURRENT_BINARY_DIR}/generated/BUILD-INFO.txt" DESTINATION .)
   install(DIRECTORY docs/ DESTINATION docs FILES_MATCHING PATTERN "*.md")
 endif()
 
