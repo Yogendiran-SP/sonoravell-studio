@@ -48,3 +48,33 @@ retains v3 Session and journal compatibility.
 - Attach green Windows, macOS and Linux CI, known limitations, and the
   Windows rollback build. Keep compensation, monitoring, and production
   multitrack recording gated on Workstream A.
+
+## Bounded source blocks
+
+ENG-01, ENG-02, ENG-03, EDIT-01. Full-length dry stereo track buffers
+previously used four bytes per channel sample across every track, including
+silence. The existing validation caps that budget at 256 MiB and also
+limits work from overlapping events. A sparse snapshot now prepares
+256-frame stereo tiles on the control thread only where dry audio is
+nonzero. Tile lookup by absolute source frame is constant time. The mixer
+advances ramps through silent tiles, keeps source ordering on overlaps,
+and slices each device request at tile boundaries. The output stage
+quantizes complete frames and measures the same PCM as before.
+
+Clip input is read from immutable Audio Pool ranges. MIDI notes still use
+the deterministic built-in instrument renderer during source preparation.
+The mixer sees both through one immutable block boundary and uses fixed
+stack scratch space. The device contract, source work cap, file schema and
+capture lifecycles are unchanged. The intended next boundary for stateful
+processors is the mixed stereo float block before device quantization,
+with processor ownership and state local to a render attempt.
+
+Dense storage remains available as a comparison and rollback path. The
+regression requires bit-identical PCM on trimmed and overlapping clips,
+instrument notes, partial blocks, gaps and seeks. In the sparse fixture,
+prepared buffer memory must be under 1/30 of dense reference memory.
+The sonoravell-render --benchmark command reports dense and sparse
+preparation time, owned track-buffer bytes, and block p95 and maximum mix
+time. Those measurements omit asset storage and hardware I/O. Dense
+arrangements can still approach the original sample cap, and sparse tiles
+have an index overhead. Synthesis preparation still runs before playback.

@@ -66,23 +66,21 @@ MixerParameters mixerParameters(const Project& project) noexcept {
     return parameters;
 }
 
-SessionAudio::SessionAudio(const Project& project) {
+SessionAudio::SessionAudio(const Project& project, SourceStorage storage) {
     validateProject(project);
     constexpr double tau = 2 * std::numbers::pi;
     constexpr double voiceBalance[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}, {1, 1}};
     sampleCount = static_cast<std::size_t>(sessionFrames(project)) * channelCount;
-    tracks.resize(project.tracks.size());
-    for (std::size_t index = 0; index < tracks.size(); ++index) {
-        const auto& track = project.tracks[index];
-        auto& samples = tracks[index];
-        samples.resize(sampleCount);
+    tracks.reserve(project.tracks.size());
+    for (const auto& track : project.tracks) {
+        auto& samples = tracks.emplace_back(sampleCount, storage);
         for (const auto& clip : track.clips) {
             const auto& audio = findAsset(project, clip.assetId).stereo();
             const auto start = static_cast<std::size_t>(frameAtTick(clip.tick, project.tempo)) * channelCount;
             const auto source = static_cast<std::size_t>(clip.sourceFrame) * channelCount;
             const auto count = static_cast<std::size_t>(clip.frameCount) * channelCount;
             for (std::size_t sample = 0; sample < count; ++sample) {
-                samples[start + sample] += static_cast<float>(audio[source + sample] / 32768.);
+                samples.add(start + sample, static_cast<float>(audio[source + sample] / 32768.));
             }
         }
         for (const auto& note : track.notes) {
@@ -106,8 +104,8 @@ SessionAudio::SessionAudio(const Project& project) {
                     voice = (.8 * voice + .2 * std::sin(phase * 2)) * std::exp(-12 * time);
                 }
                 for (unsigned channel = 0; channel < channelCount; ++channel) {
-                    samples[(start + frame) * channelCount + channel] +=
-                        static_cast<float>(level * voice * envelope * voiceBalance[static_cast<unsigned>(track.instrument)][channel]);
+                    samples.add((start + frame) * channelCount + channel,
+                        static_cast<float>(level * voice * envelope * voiceBalance[static_cast<unsigned>(track.instrument)][channel]));
                 }
             }
         }
@@ -118,6 +116,12 @@ Samples SessionAudio::render(const MixerParameters& parameters) const {
     Samples samples(sampleCount);
     PlaybackMixer(*this, parameters).read(samples);
     return samples;
+}
+
+std::size_t SessionAudio::preparedBytes() const noexcept {
+    std::size_t bytes = tracks.capacity() * sizeof(PreparedTrack);
+    for (const auto& track : tracks) bytes += track.preparedBytes();
+    return bytes;
 }
 
 static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
@@ -158,11 +162,30 @@ std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
     const auto count = std::min(output.size() / channelCount * channelCount,
                                 audio.sampleCount - position);
     std::array<unsigned, channelCount> peaks{};
-    for (std::size_t offset = 0; offset < count; offset += channelCount) {
+    for (std::size_t offset = 0; offset < count;) {
+        const auto index = (position + offset) / sourceBlockSamples;
+        const auto first = (position + offset) % sourceBlockSamples;
+        const auto blockSamples = std::min(count - offset, sourceBlockSamples - first);
+        mixBlock(output.subspan(offset, blockSamples), index, first, peaks);
+        offset += blockSamples;
+    }
+    if (peakMeter) peakMeter->store(peaks[0] | (peaks[1] << 16), std::memory_order_relaxed);
+    position += count;
+    return count;
+}
+
+void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, std::size_t first,
+                             std::array<unsigned, channelCount>& peaks) noexcept {
+    std::array<const float*, maxTracks> sources{};
+    for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
+        sources[track] = audio.tracks[track].block(index);
+    }
+    for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {
         double frame[channelCount]{};
         for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
             for (unsigned channel = 0; channel < channelCount; ++channel) {
-                frame[channel] += audio.tracks[track][position + offset + channel] * gains[track][channel].next();
+                const auto gain = gains[track][channel].next();
+                if (sources[track]) frame[channel] += sources[track][first + offset + channel] * gain;
             }
         }
         const auto masterGain = master.next();
@@ -172,9 +195,6 @@ std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
             if (peakMeter) peaks[channel] = std::max(peaks[channel], static_cast<unsigned>(std::abs(sample)));
         }
     }
-    if (peakMeter) peakMeter->store(peaks[0] | (peaks[1] << 16), std::memory_order_relaxed);
-    position += count;
-    return count;
 }
 
 bool PlaybackMixer::finished() const noexcept {

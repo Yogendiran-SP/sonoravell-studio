@@ -33,7 +33,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 - `waveOut` and `waveIn` expose session-local endpoint selection and retain the Windows default mapper. Independent Record stops playback. Experimental WASAPI recording with playback awaits physical qualification. Live monitoring and multitrack capture remain future work.
 - WASAPI render selection lasts for the app run. The picker refreshes on open, and Play looks up the chosen endpoint again. Physical routing, device loss and reconnection remain open acceptance tests.
 - Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Clock anchors are best-effort companion diagnostics saved when a WASAPI take finishes. Real driver timing, device loss, and recorded audio remain open acceptance tests.
-- Dry sources still use complete per-track buffers. Bounded source blocks and a renderer comparison are the next engine increment.
+- Dry audio uses immutable 256-frame source tiles. A dense reference and software benchmark track PCM equivalence, memory and timing. MIDI synthesis is still prepared before playback.
 - Current project limits are development caps: 16 tracks, 128 bars, 64 assets and fixed 48 kHz stereo internal sample representation; not a proof of scalable/unlimited DAW operation.
 - Only basic in-app MIDI note editing; no verified physical MIDI controller capture.
 - No demonstrated VST3/CLAP host, channel selection, latency measurement/xruns, professional hardware compatibility, full undo history, or portable legacy browser-project converter.
