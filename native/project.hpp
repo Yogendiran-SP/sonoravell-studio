@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,8 +33,12 @@ struct MidiNote {
 struct AudioAsset {
     std::uint32_t id;
     std::string name;
-    Samples stereo; // 48 kHz, interleaved.
-    bool operator==(const AudioAsset&) const = default;
+    AudioAsset(std::uint32_t id, std::string name, Samples stereo);
+    const Samples& stereo() const noexcept; // 48 kHz, interleaved, immutable.
+    bool operator==(const AudioAsset& other) const;
+
+private:
+    std::shared_ptr<const Samples> pcm;
 };
 
 struct AudioClip {

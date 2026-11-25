@@ -24,7 +24,7 @@ void generate(const std::filesystem::path& directory) {
     const auto project = makeQualificationSession();
     std::ofstream wave(directory / "reference.wav", std::ios::binary);
     if (!wave) throw std::runtime_error("Could not open the reference WAV.");
-    writeWave(wave, project.assets.front().stereo);
+    writeWave(wave, project.assets.front().stereo());
     wave.close();
     if (!wave) throw std::runtime_error("Could not finish the reference WAV.");
     saveProject(directory / "reference.sonora", project);
@@ -33,18 +33,19 @@ void generate(const std::filesystem::path& directory) {
 
 Capture readCapture(const std::filesystem::path& path) {
     Capture result;
-    Samples stereo;
+    const auto readLeft = [&](const Samples& stereo) {
+        result.mono.reserve(stereo.size() / channelCount);
+        for (std::size_t i = 0; i < stereo.size(); i += channelCount) result.mono.push_back(stereo[i]);
+    };
     if (path.extension() == takeExtension) {
         auto take = recoverTake(path);
         result.finalized = take.finalized;
-        stereo = std::move(take.stereo);
+        readLeft(take.stereo);
     } else {
         std::ifstream in(path, std::ios::binary);
         if (!in) throw std::runtime_error("Could not open the capture WAV.");
-        stereo = readWave(in, 1, "Loopback return", true).stereo;
+        readLeft(readWave(in, 1, "Loopback return", true).stereo());
     }
-    result.mono.reserve(stereo.size() / channelCount);
-    for (std::size_t i = 0; i < stereo.size(); i += channelCount) result.mono.push_back(stereo[i]);
     return result;
 }
 

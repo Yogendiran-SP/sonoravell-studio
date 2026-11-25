@@ -10,7 +10,7 @@ Audit date: 2026-11-24. The paired evidence increment starts at `b91b583a908a19f
 - PCM WAV import (16-bit mono/stereo, 44.1/48 kHz), simple resampling, placement of clips and use of the Audio Pool.
 - Single mono recording from the selected Windows input, finalized on Stop. The recording worker writes recoverable blocks to a local take journal. **Recover take…** restores the verified prefix when input or storage is interrupted.
 - Local Session autosave rotates two staged checkpoints per working Session. Restore opens a copy with its embedded audio.
-- Edit MIDI note pitch/beat/duration, delete, undo last edit, click ruler to locate playback, focus/Inspector/Browser/Mixer workspace toggles and command search.
+- Edit MIDI notes and non-destructive audio clips in the Inspector. The native editor supports a bounded undo/redo history with shared immutable source PCM, ruler location, panel visibility, and command search.
 - Opt-in event-driven WASAPI shared-mode render for an explicitly selected output or the Windows multimedia default, with period requests and endpoint and stream diagnostics. A lost output stops the attempt and can be reopened on an explicit Play. WinMM remains the launch default.
 - Opt-in [WASAPI shared capture](WASAPI_CAPTURE.md) for a single mono take from a supported 48 kHz Windows input. Live packet checks, a bounded handoff and the existing journal preserve the accepted prefix on interruption. Capture and render choose endpoints and periods independently.
 - Independent [WASAPI clock diagnostics](WASAPI_CLOCKS.md) record capture and render position/QPC anchors. The paired clock model is exercised with simulated streams.

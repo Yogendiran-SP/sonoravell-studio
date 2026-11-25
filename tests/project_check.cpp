@@ -74,7 +74,7 @@ int main() {
         song.bars = 1;
         song.name = "Project fixture";
         song.assets.push_back(readWave(source, 9, "Mono source"));
-        check(song.assets.front().stereo == Samples{0, 0, 30104, 30104, 32767, 32767},
+        check(song.assets.front().stereo() == Samples{0, 0, 30104, 30104, 32767, 32767},
               "44.1 kHz mono import did not resample and duplicate channels correctly");
         song.tracks.push_back({3, "Keys", Instrument::keys, false, 75, {{0, 960, 64, 100}}, {}});
         song.tracks.push_back({17, "Audio", Instrument::audio, false, 100, {}, {wholeAudioClip(1, song.assets.front(), 1920)}});

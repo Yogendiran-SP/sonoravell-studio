@@ -28,7 +28,7 @@ if the report needs UTF-8 output.
 The generated directory contains `reference.wav` and `reference.sonora`.
 The v1 fixture has eight distinct 48 kHz transient markers in a quiet bed and
 a quiet capture tail in the Session. Open the unmodified reference Session
-with its track at unity and the start beat set to one. Use **Devices → Record
+with its track at unity and the start beat set to zero. Use **Devices → Record
 with playback (experimental)** after selecting both WASAPI shared backends.
 Let the final marker return before Stop. Preserve the actual `.sntake` from
 `%LOCALAPPDATA%\Sonoravell Studio\Recovery`. The analyzer also accepts an

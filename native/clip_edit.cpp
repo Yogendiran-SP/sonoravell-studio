@@ -12,7 +12,7 @@ std::uint32_t editAudioClip(Project& project, std::uint32_t clipId, ClipEdit edi
     auto staged = track->clips;
     const auto selected = std::ranges::find(staged, clipId, &AudioClip::id);
     const auto start = frameAtTick(selected->tick, project.tempo);
-    const auto sourceFrames = findAsset(project, selected->assetId).stereo.size() / channelCount;
+    const auto sourceFrames = findAsset(project, selected->assetId).stereo().size() / channelCount;
     if (!selected->frameCount || selected->sourceFrame >= sourceFrames ||
         selected->frameCount > sourceFrames - selected->sourceFrame) {
         throw std::runtime_error("Audio clip range is outside its source.");
