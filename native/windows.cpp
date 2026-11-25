@@ -1774,8 +1774,10 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 pickNote(window);
             } else if (id == clipListId && HIWORD(wParam) == CBN_SELCHANGE) {
                 pickClip(window);
-            } else if ((id != muteId && id != soloId) || HIWORD(wParam) == BN_CLICKED) {
-                auto control = field(window, id);
+            } else if (lParam == 0 || HIWORD(wParam) == BN_CLICKED) {
+                // Edit fields emit change/focus notifications while the Inspector
+                // refreshes. Only buttons, menus and accelerators invoke actions.
+                const auto control = field(window, id);
                 if (!control || IsWindowEnabled(control)) execute(window, id);
             }
             return 0;
@@ -1974,6 +1976,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const auto box = arrangementBlock(lane, laneTop, arrangementRowHeight(lane), frame, frame + initialClip.frameCount);
         const int xClip = (box.left + box.right) / 2;
         stageClipDrag(initialClip, box, xClip);
+        SendMessageW(window, WM_COMMAND, MAKEWPARAM(beatId, EN_CHANGE), reinterpret_cast<LPARAM>(field(window, beatId)));
         SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(xClip + 35, laneTop + 7));
         const bool dragStaged = project == beforeDrag && clipDrag && clipDrag->moved;
         SendMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(xClip + 35, laneTop + 7));
