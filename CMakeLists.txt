@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
+add_library(sonoravell_engine native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
   native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp native/clip_edit.cpp
   native/edit_history.cpp)
@@ -37,6 +37,10 @@ if(BUILD_TESTING)
   add_executable(edit_history_check tests/edit_history_check.cpp)
   target_link_libraries(edit_history_check PRIVATE sonoravell_engine)
   add_test(NAME edit_history_check COMMAND edit_history_check)
+  add_executable(arrangement_check tests/arrangement_check.cpp)
+  target_link_libraries(arrangement_check PRIVATE sonoravell_engine)
+  add_test(NAME arrangement_check COMMAND arrangement_check)
+
   add_executable(take_check tests/take_check.cpp)
   target_link_libraries(take_check PRIVATE sonoravell_engine Threads::Threads)
   add_test(NAME take_check COMMAND take_check)
