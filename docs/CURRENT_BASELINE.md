@@ -5,6 +5,7 @@ Audit date: 2026-11-24. The paired evidence increment starts at `b91b583a908a19f
 ## Implemented in repository source
 
 - C++20 Win32 native desktop app, CMake build, Linux/macOS core-library tests, and Windows packaged executable.
+- Native track creation, naming, duplication and reordering. The arrangement provides clip hit testing, source ranges, cached waveform previews and a configurable ruler grid.
 - Editable local `Project` with tracks, MIDI notes, audio clips, basic tempo/volume/mute and an in-memory Audio Pool.
 - `.sonora` v2 saves independent clip IDs and bounded source ranges. The reader migrates v1 in memory and the writer preserves older Session files. See the [clip rules and parallel alpha gates](OFFLINE_DESKTOP_ALPHA.md).
 - PCM WAV import (16-bit mono/stereo, 44.1/48 kHz), simple resampling, placement of clips and use of the Audio Pool.
@@ -37,8 +38,8 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 
 1. **Recovery validation:** verify the [take journal](RECORDING_RECOVERY.md) with real Windows input and stress the autosave path on larger Sessions. The portable storage tests cover interrupted writes and independent checkpoints.
 2. **Device abstraction and real-time telemetry:** validate WASAPI render and capture selection, restart and recovery on real Windows inputs. The [backend decision](AUDIO_BACKEND_DECISION.md) records clock, loopback and data-safety dependencies for full duplex.
-3. **Project persistence and regression:** comprehensive session schema migration tests, undo/redo history, autosaves, reload of large sessions, failed-save atomicity, and clip relinking when external assets arrive.
-4. **Recording/editing vertical slice:** selectable input/output, simultaneous playback + capture, basic clip trim/move/split, track arming and MIDI device input.
+3. **Project persistence and regression:** extend existing migration, undo/redo, and autosave regression coverage for large Sessions, failure cases, and future external-media links.
+4. **Recording/editing vertical slice:** qualify independent and experimental duplex devices while offline mixer editing progresses. Track arming and MIDI device input remain later dependencies.
 5. **Release gates:** G0 verified hardware callback evidence, G1 recoverable sessions/recordings, G2 usable offline production workflow before any cloud/live dependence.
 
 ## Source of engineering principles

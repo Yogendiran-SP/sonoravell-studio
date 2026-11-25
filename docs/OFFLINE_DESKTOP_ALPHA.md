@@ -68,3 +68,24 @@ edits stop playback before replacing its prepared audio. Mute updates and
 their undo/redo still use the active worker's atomic mute controls. No edit
 or revision work occurs on the audio thread. Recording continues to lock
 editing until its journal has settled.
+
+## Arrangement
+
+The Browser can add an instrument or an empty audio track. Rename a track in
+the Inspector or use Commands to duplicate it and change its order. Place
+Audio Pool sources on a new track or use **Place audio source on selected
+track** to arrange multiple clips on the same audio track. Track duplication
+shares immutable PCM and assigns fresh track and clip IDs.
+
+Click a clip to select it in the Inspector. If clips overlap, the uppermost
+drawn clip wins the hit test. The Inspector lists all clips and shows the
+selected source-frame interval. The timeline shows cached stereo peak
+previews. Large sources use coarse buckets, so the drawing can show peaks
+near a trim boundary. Playback and exports use the exact stored source
+range.
+
+Commands selects a ruler grid of one beat, one quarter beat, one sixteenth
+beat, or Off. The ruler snaps to the nearest point, with ties later and the
+final point clamped inside the playable range. Inspector beat fields retain
+precise typed values. Grid and clip selection do not edit the Session or
+replace the playback snapshot.
