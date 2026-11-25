@@ -119,3 +119,15 @@ voice owns its phase position and deterministic noise sequence. The
 source builder prepares voices and sums them in existing note order, off
 the audio thread. Partition tests retain identical samples across block
 sizes. Live instrument scheduling and third-party hosting are later work.
+
+## Candidate file replacement
+
+PRJ-01, PRJ-03 and ENG-09. The desktop and render CLI write WAV data in a
+sibling staging directory, close and flush it, and only then replace a
+matching destination. Save As validates the entire existing current-version
+Session before replacement. WAV export checks the existing container
+signature and declared size. Foreign files, incomplete outputs, legacy
+Sessions, and symbolic links require a new filename. Failed encoding
+or replacement leaves the previous destination available. Physical
+power-cut behavior and concurrent writes from separate apps remain
+outside the automated file replacement evidence.

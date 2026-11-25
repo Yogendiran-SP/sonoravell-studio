@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -103,11 +102,7 @@ int main(int argc, char** argv) {
             benchmark(project, true);
         } else {
             const SessionAudio audio(project);
-            std::ofstream file(argv[argc - 1], std::ios::binary);
-            if (!file) throw std::runtime_error("Could not open WAV output");
-            writeWave(file, audio.renderProject(project));
-            file.close();
-            if (!file) throw std::runtime_error("Could not finish WAV output");
+            saveWave(argv[argc - 1], audio.renderProject(project));
         }
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

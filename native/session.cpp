@@ -1,10 +1,13 @@
 #include "session.hpp"
+#include "atomic_output.hpp"
 #include "instruments.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <istream>
 #include <ostream>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace sonoravell {
@@ -269,5 +272,24 @@ void writeWave(std::ostream& output, const Samples& samples) {
     little(dataSize, 4);
     for (auto sample : samples) little(static_cast<std::uint16_t>(sample), 2);
     if (!output) throw std::runtime_error("Could not write WAV file");
+}
+void saveWave(const std::filesystem::path& path, const Samples& samples) {
+    writeLocalFileAtomically(path, [&](std::ostream& file) { writeWave(file, samples); },
+                             [](std::istream& existing) {
+        std::array<char, 12> header{};
+        if (!existing.read(header.data(), header.size()) ||
+            std::string_view(header.data(), 4) != "RIFF" ||
+            std::string_view(header.data() + 8, 4) != "WAVE") {
+            throw std::runtime_error("Choose a new filename to preserve the existing non-WAV file.");
+        }
+        std::uint32_t length = 0;
+        for (unsigned i = 0; i < 4; ++i) {
+            length |= static_cast<std::uint32_t>(static_cast<unsigned char>(header[4 + i])) << (8 * i);
+        }
+        existing.seekg(0, std::ios::end);
+        if (length < 36 || existing.tellg() < static_cast<std::streamoff>(length) + 8) {
+            throw std::runtime_error("Choose a new filename to preserve the incomplete WAV.");
+        }
+    });
 }
 }
