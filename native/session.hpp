@@ -2,6 +2,7 @@
 
 #include "insert_processing.hpp"
 #include "mixer_parameters.hpp"
+#include "playback_position.hpp"
 #include "metronome.hpp"
 #include "source_blocks.hpp"
 
@@ -52,6 +53,7 @@ public:
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
                   std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr, bool click = false);
     void attachInserts(PreparedInserts* prepared) noexcept { inserts = prepared; }
+    bool setLoopRegion(PlaybackLoop range) noexcept;
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output) noexcept;
@@ -66,6 +68,7 @@ private:
     std::atomic<std::uint32_t>* peakMeter;
     MixerParameterMailbox* mailbox;
     bool loop;
+    std::size_t loopFirst = 0, loopEnd = 0;
     AudioBlockProcessor* effects;
     PreparedInserts* inserts = nullptr;
     bool click;

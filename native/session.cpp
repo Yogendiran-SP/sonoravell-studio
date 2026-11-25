@@ -157,11 +157,21 @@ PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const MixerParameters& i
     : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount),
       peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), effects(effects), click(click),
       master{initial.master, initial.master} {
+    loopEnd = audio.sampleCount;
     if (this->loop && position == audio.sampleCount) position = 0;
     for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
         const auto gain = initial.tracks[track];
         gains[track] = {Ramp{gain.left, gain.left}, Ramp{gain.right, gain.right}};
     }
+}
+
+bool PlaybackMixer::setLoopRegion(PlaybackLoop range) noexcept {
+    if (!range.valid(static_cast<unsigned>(audio.sampleCount / channelCount))) return false;
+    loop = true;
+    loopFirst = static_cast<std::size_t>(range.first) * channelCount;
+    loopEnd = static_cast<std::size_t>(range.end) * channelCount;
+    if (position < loopFirst || position >= loopEnd) position = loopFirst;
+    return true;
 }
 
 void PlaybackMixer::setParameters(const MixerParameters& parameters) noexcept {
@@ -186,11 +196,12 @@ std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
     for (std::size_t offset = 0; offset < count;) {
         const auto index = position / sourceBlockSamples;
         const auto first = position % sourceBlockSamples;
-        const auto blockSamples = std::min({count - offset, sourceBlockSamples - first, audio.sampleCount - position});
+        const auto boundary = loop ? loopEnd : audio.sampleCount;
+        const auto blockSamples = std::min({count - offset, sourceBlockSamples - first, boundary - position});
         mixBlock(output.subspan(offset, blockSamples), index, first, peaks);
         offset += blockSamples;
         position += blockSamples;
-        if (loop && position == audio.sampleCount) position = 0;
+        if (loop && position == loopEnd) position = loopFirst;
     }
     if (peakMeter) peakMeter->store(peaks[0] | (peaks[1] << 16), std::memory_order_relaxed);
     return count;

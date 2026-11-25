@@ -55,7 +55,7 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId, trackEffectsId, timelineInId, timelineOutId, timelineLeftId, timelineRightId, timelineFitId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId, trackEffectsId, timelineInId, timelineOutId, timelineLeftId, timelineRightId, timelineFitId, loopStartId, loopEndId, loopWholeId
 };
 
 Project project = afterHoursProject();
@@ -152,9 +152,15 @@ constexpr std::array workspaceLayouts{
 unsigned playFrom = 0;
 bool paused = false;
 bool loopPlayback = false;
+std::optional<PlaybackLoop> selectedLoop;
 bool metronomePlayback = false;
 std::uint32_t totalFrames = sessionFrames(project);
 TimelineView timeline = [] { TimelineView view; view.resize(totalFrames); return view; }();
+
+std::optional<PlaybackLoop> activeLoop() {
+    if (!loopPlayback || duplex.active()) return {};
+    return selectedLoop.value_or(PlaybackLoop{0, totalFrames});
+}
 
 std::wstring wide(const std::string& value) {
     if (value.empty()) return {};
@@ -478,14 +484,19 @@ void drawArrangement(HWND window) {
     const int rowHeight = arrangementRowHeight(panel);
     auto ruler = RECT{left, panel.top + 31, panel.right - 8, gridTop};
     FillRect(dc, &ruler, GetSysColorBrush(COLOR_BTNFACE));
+    if (selectedLoop) {
+        const RECT region{std::max(ruler.left, static_cast<LONG>(timelineX(panel, selectedLoop->first))), ruler.top,
+                          std::min(ruler.right, static_cast<LONG>(timelineX(panel, selectedLoop->end))), ruler.bottom};
+        if (region.left < region.right) fill(dc, region, RGB(193, 219, 246));
+    }
     const auto xOf = [&](unsigned frame) {
         return timelineX(panel, frame);
     };
     SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
     if (pianoRoll) {
         drawPianoRoll(window, dc, panel);
-        const auto cursor = playbackFrame(totalFrames, playFrom,
-            audio.state() == Output::State::playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active());
+        const auto cursor = audio.state() == Output::State::playing
+            ? playbackFrame(totalFrames, playFrom, audio.framesPlayed(), activeLoop()) : playFrom;
         const auto x = timelineX(panel, cursor);
         if (x >= left && x <= panel.right - 8) fill(dc, {x, ruler.top, x + 1, panel.bottom}, RGB(220, 105, 39));
         RestoreDC(dc, savedDc);
@@ -556,7 +567,7 @@ void drawArrangement(HWND window) {
         lastLabel = x;
     }
     const bool playing = audio.state() == Output::State::playing;
-    const int x = xOf(playbackFrame(totalFrames, playFrom, playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active()));
+    const int x = xOf(playing ? playbackFrame(totalFrames, playFrom, audio.framesPlayed(), activeLoop()) : playFrom);
     const RECT playhead{x, ruler.top, x + (playing ? 2 : 1), gridTop + height};
     if (x >= left && x <= panel.right - 8) fill(dc, playhead, RGB(220, 105, 39));
     if (clipDrag && clipDrag->moved) {
@@ -796,6 +807,7 @@ void applyEditedProject(HWND window, int index, EditImpact impact) {
     if (impact == EditImpact::rebuildAudio) prepared.reset();
     totalFrames = sessionFrames(project);
     timeline.resize(totalFrames);
+    if (selectedLoop && !selectedLoop->valid(totalFrames)) selectedLoop.reset();
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMixer(mixerParameters(project));
     markDirty();
@@ -844,6 +856,7 @@ void installProject(HWND window, Project next) {
     totalFrames = sessionFrames(project);
     timeline = {};
     timeline.resize(totalFrames);
+    selectedLoop.reset();
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMixer(mixerParameters(project));
     dirty = false;
@@ -959,7 +972,8 @@ void showCommands(HWND window) {
          {pianoRollId, L"Toggle Piano Roll"}, {velocityUpId, L"Increase selected MIDI velocity"},
          {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}, {masterEffectsId, L"Master Effects..."}, {trackEffectsId, L"Track Effects..."}, {timelineInId, L"Timeline zoom in"},
          {timelineOutId, L"Timeline zoom out"}, {timelineLeftId, L"Timeline scroll left"},
-         {timelineRightId, L"Timeline scroll right"}, {timelineFitId, L"Fit Session timeline"}}) {
+         {timelineRightId, L"Timeline scroll right"}, {timelineFitId, L"Fit Session timeline"},
+         {loopStartId, L"Set loop start at cursor"}, {loopEndId, L"Set loop end at cursor"}, {loopWholeId, L"Use whole-Session loop"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
         const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId || entry.first == trackEffectsId;
@@ -1283,10 +1297,12 @@ void showAudioDevices(HWND window) {
 
 void startPlayback(HWND window) {
     auto inserts = prepareInserts(project);
+    const auto loop = activeLoop();
+    if (loop) playFrom = normalizeLoopStart(playFrom, *loop);
     audio.setMixer(mixerParameters(project));
-    if (useWasapi) audio.play(renderedSession(), std::move(inserts), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback, metronomePlayback);
+    if (useWasapi) audio.play(renderedSession(), std::move(inserts), playFrom, WAVE_MAPPER, wasapiConfig, {}, loop, metronomePlayback);
     else audio.play(renderedSession(), std::move(inserts), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice),
-                    {}, {}, loopPlayback, metronomePlayback);
+                    {}, {}, loop, metronomePlayback);
     paused = false;
     refreshTransport(window);
 }
@@ -1611,8 +1627,8 @@ void execute(HWND window, int id) {
         } else if (id == timelineLeftId || id == timelineRightId) {
             timeline.scroll(totalFrames, id == timelineRightId);
         } else {
-            const auto cursor = playbackFrame(totalFrames, playFrom,
-                audio.state() == Output::State::playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active());
+            const auto cursor = audio.state() == Output::State::playing
+                ? playbackFrame(totalFrames, playFrom, audio.framesPlayed(), activeLoop()) : playFrom;
             const auto anchor = cursor >= timeline.first() && cursor <= timeline.end() ? cursor : timeline.first() + timeline.span() / 2;
             timeline.zoom(totalFrames, anchor, id == timelineInId);
         }
@@ -1703,6 +1719,26 @@ void execute(HWND window, int id) {
         }
         return;
     }
+    if (id >= loopStartId && id <= loopWholeId) {
+        if (audio.state() == Output::State::playing) {
+            status(window, L"Pause or stop before selecting a loop region.");
+            return;
+        }
+        if (id == loopWholeId) {
+            selectedLoop.reset();
+            status(window, L"Loop will use the whole Session.");
+        } else {
+            auto proposed = selectedLoop.value_or(PlaybackLoop{0, totalFrames});
+            if (id == loopStartId) proposed.first = playFrom;
+            else proposed.end = playFrom;
+            if (!proposed.valid(totalFrames)) throw std::runtime_error("Choose an ordered loop region of at least 256 frames.");
+            selectedLoop = proposed;
+            status(window, L"Loop region set. Enable Loop before playback.");
+        }
+        const auto panel = arrangeRect(window);
+        InvalidateRect(window, &panel, FALSE);
+        return;
+    }
     if (id == loopId) {
         if (audio.state() != Output::State::playing) loopPlayback = !loopPlayback;
         refreshTransport(window);
@@ -1768,7 +1804,7 @@ void execute(HWND window, int id) {
     } else if (id == playId) {
         if (audio.state() == Output::State::playing) {
             audio.stop();
-            playFrom = std::min(totalFrames - 1, playbackFrame(totalFrames, playFrom, audio.framesPlayed(), loopPlayback));
+            playFrom = std::min(totalFrames - 1, playbackFrame(totalFrames, playFrom, audio.framesPlayed(), activeLoop()));
             paused = true;
             refreshTransport(window);
             const auto panel = arrangeRect(window);
@@ -2323,7 +2359,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         execute(window, rewindId);
         const bool rewound = playFrom == 0 && project == beforeTransport && prepared == beforeMixer;
         execute(window, loopId);
-        const bool transportOk = toggled && rewound && !loopPlayback;
+        playFrom = frameAtTick(ticksPerBeat, project.tempo);
+        execute(window, loopStartId);
+        const auto regionStart = playFrom;
+        playFrom = frameAtTick(4 * ticksPerBeat, project.tempo);
+        execute(window, loopEndId);
+        const bool regionSet = selectedLoop && selectedLoop->first == regionStart && selectedLoop->end == playFrom;
+        execute(window, loopWholeId);
+        execute(window, rewindId);
+        const bool transportOk = toggled && rewound && !loopPlayback && regionSet && !selectedLoop;
         execute(window, composeLayoutId);
         const auto composed = currentLayout();
         execute(window, widerInspectorId);
