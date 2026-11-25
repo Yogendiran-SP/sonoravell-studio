@@ -80,4 +80,36 @@ std::uint32_t editAudioClip(Project& project, std::uint32_t clipId, ClipEdit edi
     }
     return selection;
 }
+
+void moveClipToTrack(Project& project, std::uint32_t clipId, std::uint32_t trackId, std::uint32_t tick) {
+    const auto destination = std::ranges::find(project.tracks, trackId, &Track::id);
+    if (destination == project.tracks.end() || destination->instrument != Instrument::audio) {
+        throw std::runtime_error("Drop audio clips on an audio track.");
+    }
+    for (auto& source : project.tracks) {
+        const auto found = std::ranges::find(source.clips, clipId, &AudioClip::id);
+        if (found == source.clips.end()) continue;
+        if (&source == &*destination) {
+            editAudioClip(project, clipId, ClipEdit::move, tick);
+            return;
+        }
+        auto moved = *found;
+        moved.tick = tick;
+        auto from = source.clips;
+        auto to = destination->clips;
+        from.erase(from.begin() + (found - source.clips.begin()));
+        to.push_back(moved);
+        source.clips.swap(from);
+        destination->clips.swap(to);
+        try {
+            validateProject(project);
+        } catch (...) {
+            source.clips.swap(from);
+            destination->clips.swap(to);
+            throw;
+        }
+        return;
+    }
+    throw std::runtime_error("Select an audio clip first.");
+}
 }
