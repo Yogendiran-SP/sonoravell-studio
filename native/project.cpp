@@ -1,24 +1,14 @@
 #include "project.hpp"
+#include "atomic_output.hpp"
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <fstream>
 #include <limits>
-#include <random>
 #include <stdexcept>
-#include <system_error>
 #include <unordered_set>
 #include <utility>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <fcntl.h>
-#include <unistd.h>
-#endif
 
 namespace sonoravell {
 namespace {
@@ -233,51 +223,6 @@ Project readProject(std::istream& file) {
     return project;
 }
 
-class SaveStaging {
-public:
-    explicit SaveStaging(const std::filesystem::path& destination) {
-        std::random_device entropy;
-        for (int attempt = 0; attempt < 20; ++attempt) {
-            auto candidate = destination.parent_path() / (".sonoravell-save-" + std::to_string(entropy()));
-            if (std::filesystem::create_directory(candidate)) {
-                path = std::move(candidate);
-                return;
-            }
-        }
-        throw std::runtime_error("Could not create temporary Session storage.");
-    }
-    ~SaveStaging() {
-        std::error_code ignored;
-        std::filesystem::remove(path / "session", ignored);
-        std::filesystem::remove(path, ignored);
-    }
-    std::filesystem::path path;
-};
-
-void commitSave(const std::filesystem::path& temporary, const std::filesystem::path& destination) {
-#ifdef _WIN32
-    const auto file = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-    require(file != INVALID_HANDLE_VALUE, "Could not reopen the staged Session.");
-    const auto flushed = FlushFileBuffers(file);
-    CloseHandle(file);
-    require(flushed, "Could not flush the staged Session.");
-    require(MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH),
-            "Could not replace the Session file.");
-#else
-    const int file = ::open(temporary.c_str(), O_RDONLY);
-    require(file >= 0, "Could not reopen the staged Session.");
-    const int flushed = fsync(file);
-    close(file);
-    require(flushed == 0, "Could not flush the staged Session.");
-    std::filesystem::rename(temporary, destination);
-    // Best effort for filesystems that do not support syncing directory metadata.
-    const int directory = ::open(destination.parent_path().c_str(), O_RDONLY);
-    if (directory >= 0) {
-        fsync(directory);
-        close(directory);
-    }
-#endif
-}
 }
 
 AudioAsset::AudioAsset(std::uint32_t id, std::string name, Samples stereo)
@@ -433,23 +378,13 @@ Project openProject(const std::filesystem::path& path) {
 
 void saveProject(const std::filesystem::path& path, const Project& project) {
     validateProject(project);
-    const auto destination = std::filesystem::absolute(path);
-    if (std::filesystem::is_regular_file(destination)) {
-        std::ifstream existing(destination, std::ios::binary);
-        require(static_cast<bool>(existing), "Could not check the existing Session version.");
-        std::array<char, signature.size()> header{};
-        if (existing.read(header.data(), header.size()) && header == signature) {
-            require(readNumber(existing) == schemaVersion, "Save to a new filename to preserve the existing Session version.");
-        }
-    }
-    const SaveStaging staging(destination);
-    const auto temporary = staging.path / "session";
-    std::ofstream file(temporary, std::ios::binary);
-    require(static_cast<bool>(file), "Could not create a staged Session file.");
-    writeProject(file, project);
-    file.close();
-    require(static_cast<bool>(file), "Could not finish writing the Session.");
-    commitSave(temporary, destination);
+    writeLocalFileAtomically(path, [&](std::ostream& file) { writeProject(file, project); },
+                             [](std::istream& existing) {
+        require(readTag<8>(existing) == signature && readNumber(existing) == schemaVersion,
+                "Choose a new filename to preserve the existing file or Session version.");
+        existing.seekg(0);
+        (void)readProject(existing);
+    });
 }
 
 AudioAsset readWave(std::istream& file, std::uint32_t id, std::string name, bool requireSessionRate) {

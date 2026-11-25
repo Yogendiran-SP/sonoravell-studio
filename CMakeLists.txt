@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SonoravellStudio LANGUAGES CXX)
 
-add_library(sonoravell_engine native/instruments.cpp native/fader_automation.cpp native/inserts.cpp native/insert_processing.cpp native/metronome.cpp native/piano_roll.cpp native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
+add_library(sonoravell_engine native/atomic_output.cpp native/instruments.cpp native/fader_automation.cpp native/inserts.cpp native/insert_processing.cpp native/metronome.cpp native/piano_roll.cpp native/effects.cpp native/arrangement.cpp native/session.cpp native/project.cpp native/take_journal.cpp native/session_autosave.cpp
   native/shared_render.cpp native/shared_capture.cpp native/stream_clock.cpp native/duplex_coordination.cpp
   native/duplex_transport.cpp native/loopback_qualification.cpp native/duplex_qualification.cpp native/clip_edit.cpp
   native/edit_history.cpp)
@@ -53,6 +53,9 @@ if(BUILD_TESTING)
   add_executable(fader_automation_check tests/fader_automation_check.cpp)
   target_link_libraries(fader_automation_check PRIVATE sonoravell_engine)
   add_test(NAME fader_automation_check COMMAND fader_automation_check)
+  add_executable(atomic_output_check tests/atomic_output_check.cpp)
+  target_link_libraries(atomic_output_check PRIVATE sonoravell_engine)
+  add_test(NAME atomic_output_check COMMAND atomic_output_check)
   add_executable(alpha_session_check tests/alpha_session_check.cpp)
   target_link_libraries(alpha_session_check PRIVATE sonoravell_engine)
   add_test(NAME alpha_session_check COMMAND alpha_session_check)

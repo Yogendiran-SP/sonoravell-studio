@@ -1795,10 +1795,7 @@ void execute(HWND window, int id) {
         const auto path = selectFile(window, true, wavFilter, L"wav");
         if (!path.empty()) {
             const auto samples = renderedSession()->renderProject(project);
-            std::ofstream file(path, std::ios::binary);
-            writeWave(file, samples);
-            file.close();
-            if (!file) throw std::runtime_error("Could not finish the WAV export.");
+            saveWave(path, samples);
             status(window, L"Exported 48 kHz stereo WAV.");
         }
     } else if (id == playId) {

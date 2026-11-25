@@ -90,4 +90,5 @@ private:
 };
 
 void writeWave(std::ostream& output, const Samples& samples);
+void saveWave(const std::filesystem::path& path, const Samples& samples);
 }
