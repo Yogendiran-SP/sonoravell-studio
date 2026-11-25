@@ -30,7 +30,7 @@ struct SharedRenderReport {
     unsigned emptyBufferEvents = 0;
     unsigned waitTimeouts = 0;
     unsigned deviceInvalidations = 0;
-    unsigned submittedFrames = 0;
+    std::uint64_t submittedFrames = 0;
 };
 
 class SharedRenderEndpoint {
@@ -49,6 +49,6 @@ public:
 // Single worker owns the endpoint and mixer. The loop uses only prepared
 // device buffers and atomics. The endpoint owns its platform resources.
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
-                                SharedRenderConfig config,                    std::atomic<unsigned>& played, std::stop_token stop,
+                                SharedRenderConfig config, std::atomic<std::uint64_t>& played, std::stop_token stop,
                                 std::atomic<bool>* ready = nullptr) noexcept;
 }

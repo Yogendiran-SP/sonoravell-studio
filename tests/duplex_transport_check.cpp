@@ -109,7 +109,7 @@ struct Run final : CaptureSink {
     std::unique_ptr<TakeQueue> queue = std::make_unique<TakeQueue>();
     RenderEnd renderEnd{};
     CaptureStreamReport captureReport;
-    std::atomic<unsigned> played{0};
+    std::atomic<std::uint64_t> played{0};
     std::jthread renderWorker, inputWorker;
 
     explicit Run(DuplexTransport& transport) : transport(transport) {}

@@ -177,7 +177,7 @@ std::vector<AudioEndpointInfo> listWasapiRenderEndpoints() {
 }
 
 WasapiOutputReport runWasapiOutput(PlaybackMixer& mixer, WasapiOutputConfig config,
-                                  std::atomic<unsigned>& played,
+                                  std::atomic<std::uint64_t>& played,
                                   std::stop_token stop, std::uint64_t attempt, std::atomic<bool>* ready) noexcept {
     const ComApartment apartment;
     if (FAILED(apartment.result)) {

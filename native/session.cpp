@@ -140,9 +140,10 @@ double PlaybackMixer::Ramp::next() noexcept {
 }
 
 PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial, std::size_t startFrame,
-                             std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox)
+                             std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox, bool loop)
     : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount),
-      peakMeter(peakMeter), mailbox(mailbox), master{initial.master, initial.master} {
+      peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), master{initial.master, initial.master} {
+    if (this->loop && position == audio.sampleCount) position = 0;
     for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
         const auto gain = initial.tracks[track];
         gains[track] = {Ramp{gain.left, gain.left}, Ramp{gain.right, gain.right}};
@@ -159,18 +160,19 @@ void PlaybackMixer::setParameters(const MixerParameters& parameters) noexcept {
 
 std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
     if (mailbox) setParameters(mailbox->readLatest());
-    const auto count = std::min(output.size() / channelCount * channelCount,
-                                audio.sampleCount - position);
+    const auto capacity = output.size() / channelCount * channelCount;
+    const auto count = loop ? capacity : std::min(capacity, audio.sampleCount - position);
     std::array<unsigned, channelCount> peaks{};
     for (std::size_t offset = 0; offset < count;) {
-        const auto index = (position + offset) / sourceBlockSamples;
-        const auto first = (position + offset) % sourceBlockSamples;
-        const auto blockSamples = std::min(count - offset, sourceBlockSamples - first);
+        const auto index = position / sourceBlockSamples;
+        const auto first = position % sourceBlockSamples;
+        const auto blockSamples = std::min({count - offset, sourceBlockSamples - first, audio.sampleCount - position});
         mixBlock(output.subspan(offset, blockSamples), index, first, peaks);
         offset += blockSamples;
+        position += blockSamples;
+        if (loop && position == audio.sampleCount) position = 0;
     }
     if (peakMeter) peakMeter->store(peaks[0] | (peaks[1] << 16), std::memory_order_relaxed);
-    position += count;
     return count;
 }
 
@@ -198,11 +200,11 @@ void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, 
 }
 
 bool PlaybackMixer::finished() const noexcept {
-    return position == audio.sampleCount;
+    return !loop && position == audio.sampleCount;
 }
 
 unsigned PlaybackMixer::remainingFrames() const noexcept {
-    return static_cast<unsigned>((audio.sampleCount - position) / channelCount);
+    return static_cast<unsigned>((audio.sampleCount - (loop ? 0 : position)) / channelCount);
 }
 
 void writeWave(std::ostream& output, const Samples& samples) {

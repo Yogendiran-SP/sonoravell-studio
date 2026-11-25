@@ -5,8 +5,9 @@
 #include <limits>
 
 namespace sonoravell {
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 SharedRenderReport renderShared(SharedRenderEndpoint& endpoint, PlaybackMixer& mixer,
-                                SharedRenderConfig config,                    std::atomic<unsigned>& played, std::stop_token stop,
+                                SharedRenderConfig config, std::atomic<std::uint64_t>& played, std::stop_token stop,
                                 std::atomic<bool>* ready) noexcept {
     SharedRenderReport report;
     report.requestedFrames = config.requestedFrames;

@@ -45,7 +45,7 @@ public:
     static constexpr unsigned rampFrames = sampleRate / 200;
 
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
-                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr);
+                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false);
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output) noexcept;
@@ -59,6 +59,7 @@ private:
     std::size_t position = 0;
     std::atomic<std::uint32_t>* peakMeter;
     MixerParameterMailbox* mailbox;
+    bool loop;
     struct Ramp {
         double value = 1.;
         double target = 1.;
