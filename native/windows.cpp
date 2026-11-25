@@ -53,7 +53,7 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId
 };
 
 Project project = afterHoursProject();
@@ -147,6 +147,7 @@ constexpr std::array workspaceLayouts{
 unsigned playFrom = 0;
 bool paused = false;
 bool loopPlayback = false;
+bool metronomePlayback = false;
 std::uint32_t totalFrames = sessionFrames(project);
 
 std::wstring wide(const std::string& value) {
@@ -900,7 +901,7 @@ void showCommands(HWND window) {
          {widerBrowserId, L"Layout: Widen Browser"}, {narrowerBrowserId, L"Layout: Narrow Browser"},
          {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."},
          {pianoRollId, L"Toggle Piano Roll"}, {velocityUpId, L"Increase selected MIDI velocity"},
-         {velocityDownId, L"Decrease selected MIDI velocity"}}) {
+         {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
         const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId;
@@ -1224,9 +1225,9 @@ void showAudioDevices(HWND window) {
 
 void startPlayback(HWND window) {
     audio.setMixer(mixerParameters(project));
-    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback);
+    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback, metronomePlayback);
     else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice),
-                    {}, {}, loopPlayback);
+                    {}, {}, loopPlayback, metronomePlayback);
     paused = false;
     refreshTransport(window);
 }
@@ -1579,6 +1580,15 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == metronomeId) {
+        if (audio.state() == Output::State::playing) {
+            status(window, L"Pause or stop to change the playback metronome.");
+        } else {
+            metronomePlayback = !metronomePlayback;
+            status(window, metronomePlayback ? L"Playback metronome on." : L"Playback metronome off.");
+        }
+        return;
+    }
     if (id == loopId) {
         if (audio.state() != Output::State::playing) loopPlayback = !loopPlayback;
         refreshTransport(window);
@@ -2232,7 +2242,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
                          {FVIRTKEY | FCONTROL | FSHIFT, 'Z', redoId}, {FVIRTKEY | FCONTROL, VK_SPACE, playId},
-                         {FVIRTKEY | FCONTROL, VK_HOME, rewindId}, {FVIRTKEY | FCONTROL, 'P', pianoRollId}, {FVIRTKEY | FCONTROL, 'O', openId},
+                         {FVIRTKEY | FCONTROL, VK_HOME, rewindId}, {FVIRTKEY | FCONTROL, 'P', pianoRollId}, {FVIRTKEY | FCONTROL, 'M', metronomeId}, {FVIRTKEY | FCONTROL, 'O', openId},
                          {FVIRTKEY | FCONTROL | FSHIFT, 'S', saveId}, {FVIRTKEY | FCONTROL, 'F', queryFocusId}};
     const auto accelerator = CreateAcceleratorTableW(shortcuts, static_cast<int>(std::size(shortcuts)));
     MSG message{};

@@ -71,6 +71,7 @@ SessionAudio::SessionAudio(const Project& project, SourceStorage storage) {
     constexpr double tau = 2 * std::numbers::pi;
     constexpr double voiceBalance[][2] = {{.85, .65}, {.8, .8}, {.8, .8}, {.55, .85}, {1, 1}};
     sampleCount = static_cast<std::size_t>(sessionFrames(project)) * channelCount;
+    metronome.emplace(project.tempo, static_cast<unsigned>(sampleCount / channelCount));
     tracks.reserve(project.tracks.size());
     for (const auto& track : project.tracks) {
         auto& samples = tracks.emplace_back(sampleCount, storage);
@@ -119,7 +120,7 @@ Samples SessionAudio::render(const MixerParameters& parameters, AudioBlockProces
 }
 
 std::size_t SessionAudio::preparedBytes() const noexcept {
-    std::size_t bytes = tracks.capacity() * sizeof(PreparedTrack);
+    std::size_t bytes = tracks.capacity() * sizeof(PreparedTrack) + metronome->scheduledBytes();
     for (const auto& track : tracks) bytes += track.preparedBytes();
     return bytes;
 }
@@ -141,9 +142,9 @@ double PlaybackMixer::Ramp::next() noexcept {
 
 PlaybackMixer::PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial, std::size_t startFrame,
                              std::atomic<std::uint32_t>* peakMeter, MixerParameterMailbox* mailbox, bool loop,
-                             AudioBlockProcessor* effects)
+                             AudioBlockProcessor* effects, bool click)
     : audio(audio), position(std::min(startFrame, audio.sampleCount / channelCount) * channelCount),
-      peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), effects(effects),
+      peakMeter(peakMeter), mailbox(mailbox), loop(loop && audio.sampleCount != 0), effects(effects), click(click),
       master{initial.master, initial.master} {
     if (this->loop && position == audio.sampleCount) position = 0;
     for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
@@ -195,7 +196,9 @@ void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, 
         }
         for (unsigned channel = 0; channel < channelCount; ++channel) scratch[offset + channel] = frame[channel];
     }
-    if (effects) effects->process(std::span(scratch).first(output.size()));
+    auto prepared = std::span(scratch).first(output.size());
+    if (effects) effects->process(prepared);
+    if (click) audio.metronome->add(prepared, static_cast<unsigned>((index * sourceBlockSamples + first) / channelCount));
     for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {
         const auto masterGain = master.next();
         for (unsigned channel = 0; channel < channelCount; ++channel) {

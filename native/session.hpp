@@ -2,6 +2,7 @@
 
 #include "effects.hpp"
 #include "mixer_parameters.hpp"
+#include "metronome.hpp"
 #include "source_blocks.hpp"
 
 #include <array>
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -39,6 +41,7 @@ private:
     friend class PlaybackMixer;
     std::vector<PreparedTrack> tracks;
     std::size_t sampleCount;
+    std::optional<Metronome> metronome;
 };
 
 class PlaybackMixer {
@@ -46,7 +49,7 @@ public:
     static constexpr unsigned rampFrames = sampleRate / 200;
 
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
-                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr);
+                  std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr, bool click = false);
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output) noexcept;
@@ -62,6 +65,7 @@ private:
     MixerParameterMailbox* mailbox;
     bool loop;
     AudioBlockProcessor* effects;
+    bool click;
     struct Ramp {
         double value = 1.;
         double target = 1.;

@@ -117,7 +117,7 @@ public:
     void setMixer(const MixerParameters& parameters) noexcept { mixerParameters.publish(parameters); }
 
     void play(std::shared_ptr<const SessionAudio> session, unsigned startFrame, unsigned deviceId,
-              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, bool loop = false) {
+              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, bool loop = false, bool click = false) {
         stop();
         lastUsedWasapi = wasapi.has_value();
         if (wasapi) wasapiRun.reset();
@@ -125,8 +125,8 @@ public:
         playbackState.store(State::playing);
         try {
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
-                                   wasapi = std::move(wasapi), duplex = std::move(duplex), loop](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, loop && !duplex);
+                                   wasapi = std::move(wasapi), duplex = std::move(duplex), loop, click](std::stop_token stopToken) mutable {
+                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, loop && !duplex, nullptr, click && !duplex);
                 if (wasapi) {
                     wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), played, stopToken,
                                                 duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
