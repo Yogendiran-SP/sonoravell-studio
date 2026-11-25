@@ -17,6 +17,7 @@
 #include "workspace_layout.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
+#include "candidate_build.hpp"
 #include "windows_inserts.hpp"
 #include "windows_capture.hpp"
 #include "windows_devices.hpp"
@@ -55,7 +56,7 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId, trackEffectsId, timelineInId, timelineOutId, timelineLeftId, timelineRightId, timelineFitId, loopStartId, loopEndId, loopWholeId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId, trackEffectsId, timelineInId, timelineOutId, timelineLeftId, timelineRightId, timelineFitId, loopStartId, loopEndId, loopWholeId, aboutBuildId
 };
 
 Project project = afterHoursProject();
@@ -973,10 +974,10 @@ void showCommands(HWND window) {
          {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}, {masterEffectsId, L"Master Effects..."}, {trackEffectsId, L"Track Effects..."}, {timelineInId, L"Timeline zoom in"},
          {timelineOutId, L"Timeline zoom out"}, {timelineLeftId, L"Timeline scroll left"},
          {timelineRightId, L"Timeline scroll right"}, {timelineFitId, L"Fit Session timeline"},
-         {loopStartId, L"Set loop start at cursor"}, {loopEndId, L"Set loop end at cursor"}, {loopWholeId, L"Use whole-Session loop"}}) {
+         {loopStartId, L"Set loop start at cursor"}, {loopEndId, L"Set loop end at cursor"}, {loopWholeId, L"Use whole-Session loop"}, {aboutBuildId, L"About this build"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
-        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId || entry.first == trackEffectsId;
+        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId || entry.first == trackEffectsId || entry.first == aboutBuildId;
         const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
             : (!needsIdle || !capture.active()) && (!action || IsWindowEnabled(action));
         AppendMenuW(menu, MF_STRING | (available ? MF_ENABLED : MF_GRAYED),
@@ -1689,6 +1690,11 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == aboutBuildId) {
+        const auto build = std::wstring(candidateVersion) + L"\nAcceptance pending\nSource commit " + sourceCommit;
+        MessageBoxW(window, build.c_str(), L"Sonoravell Studio build", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
     if (id == masterEffectsId || id == trackEffectsId) {
         const auto* list = &project.masterInserts;
         auto title = std::wstring(L"Master Effects");

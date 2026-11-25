@@ -17,20 +17,48 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        with:
+          fetch-depth: 2
+      - if: runner.os != 'Windows'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - if: runner.os == 'Windows'
+        env:
+          CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release "-DSONORAVELL_SOURCE_COMMIT=$env:CANDIDATE_COMMIT"
       - run: cmake --build build --config Release
       - run: ctest --test-dir build -C Release --output-on-failure
+      - name: Check deterministic candidate archive
+        if: runner.os == 'Linux'
+        run: python3 tests/candidate_package_check.py
       - name: Report mixer timing
         if: runner.os == 'Linux'
         run: |
           ./build/sonoravell-render --benchmark
           ./build/sonoravell-render --benchmark-alpha
       - name: Stage Windows application
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && (github.event_name != 'pull_request' || github.base_ref == 'main')
         run: cmake --install build --config Release --prefix package
+      - name: Package and smoke-test Windows candidate
+        if: runner.os == 'Windows' && (github.event_name != 'pull_request' || github.base_ref == 'main')
+        env:
+          CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts/package_alpha_candidate.py --commit $env:CANDIDATE_COMMIT --stage package --output candidate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zip = Get-ChildItem candidate -Filter *.zip
+          if (@($zip).Count -ne 1) { throw "Expected one candidate zip" }
+          python scripts/package_alpha_candidate.py --commit $env:CANDIDATE_COMMIT --verify $zip.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath candidate-smoke
+          $app = Start-Process -FilePath (Join-Path $PWD "candidate-smoke/SonoravellStudio.exe") -ArgumentList "--workspace-check" -Wait -PassThru
+          if ($app.ExitCode -ne 0) { exit $app.ExitCode }
+          & ./candidate-smoke/sonoravell-render.exe ./candidate-smoke/demo.wav
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item ./candidate-smoke/demo.wav).Length -le 44) { throw "Empty WAV output" }
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && (github.event_name != 'pull_request' || github.base_ref == 'main')
         with:
           name: Sonoravell-Studio-Windows
-          path: package/
+          path: candidate/
+          retention-days: 90
           if-no-files-found: error

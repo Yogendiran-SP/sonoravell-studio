@@ -30,6 +30,12 @@ Use Ctrl+F to focus **Find a command**, type a term, and press Enter to see matc
 commands. Commands provides panel toggles and widths, Beginner–Pro and workflow presets, and local layout file operations. Ctrl+O
 opens a Session, Ctrl+Shift+S opens Save As, and Ctrl+Z and Ctrl+Y step through the last 24 edits.
 
+## Windows alpha candidate
+
+See the [candidate guide](docs/ALPHA_CANDIDATE.md) for verified source
+identity, archive checksums, launch instructions, limitations and rollback.
+Acceptance remains pending for hands-on offline usability and physical audio.
+
 ## Build and test
 
 Use CMake 3.20 or later and a C++20 toolchain. On Windows, use Visual Studio with

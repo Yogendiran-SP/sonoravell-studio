@@ -31,7 +31,7 @@ follows the [separate acceptance protocol](HARDWARE_QUALIFICATION.md).
 
 Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `native/windows.cpp`, `native/windows_audio.hpp`, `native/windows_wasapi.cpp`, `native/windows_wasapi_capture.cpp`, `native/audio_endpoints.hpp`, and the `tests` directory.
 
-Run the [offline alpha candidate checklist](ALPHA_RELEASE_CHECKLIST.md) before release.
+The [candidate guide](ALPHA_CANDIDATE.md) records build identity, file verification and rollback. Use the [acceptance report](ALPHA_ACCEPTANCE_REPORT.md) and [hardware status](ALPHA_HARDWARE_REPORT.md) to track open release gates.
 
 ## Limitations still open
 
