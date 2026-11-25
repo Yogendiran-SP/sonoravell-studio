@@ -169,5 +169,22 @@ intact. Capture locks out drag edits. Structural edits follow the same
 snapshot and playback lifecycle as Inspector commands. Tests cover
 signed drag projection, grid and boundary behavior and a Windows
 drag transaction, cancellation and undo. The smoke starts from prepared
-gesture geometry so it also runs on an unattended Windows desktop. Piano roll gestures, velocity editing,
-playback metronome and recording count-in have separate acceptance work.
+gesture geometry so it also runs on an unattended Windows desktop. Playback metronome and recording count-in
+remain separate acceptance work.
+
+## Graphical MIDI editing
+
+EDIT-02 and UX-10. Select an instrument track and use Ctrl+P or Toggle
+Piano Roll in Commands. Click an empty cell to add a note at the current
+snap resolution. Drag notes to change time and pitch. Drag the right
+edge of a wide note to resize it. Use the wheel over a note to change its
+velocity, Ctrl+wheel to scroll pitches, and right-click or Delete to
+remove a note. Command search also offers two velocity adjustments for
+the selected note. The Inspector continues to provide typed positions.
+
+Edits and gestures use the existing command history. Capture disables
+note editing. Switching the view or scrolling pitches leaves project
+data and the playback snapshot alone. Portable tests check pitch rows,
+velocity, time bounds and resizing. The Windows workspace smoke exercises
+note creation, velocity adjustment and deletion. Keyboard-only and
+assistive-technology usability verification remains open.

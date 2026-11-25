@@ -37,7 +37,7 @@ Sources: README.md, `native/project.{hpp,cpp}`, `native/session.{hpp,cpp}`, `nat
 - Recording has a bounded queue and a duration cap. A crash can lose uncommitted samples. Clock anchors are best-effort companion diagnostics saved when a WASAPI take finishes. Real driver timing, device loss, and recorded audio remain open acceptance tests.
 - Dry audio uses immutable 256-frame source tiles. A dense reference and software benchmark track PCM equivalence, memory and timing. MIDI synthesis is still prepared before playback.
 - Current project limits are development caps: 16 tracks, 128 bars, 64 assets and fixed 48 kHz stereo internal sample representation; not a proof of scalable/unlimited DAW operation.
-- Only basic in-app MIDI note editing; no verified physical MIDI controller capture.
+- In-app MIDI works in the Inspector and basic graphical Piano Roll. Physical MIDI controller capture remains open.
 - No demonstrated VST3/CLAP host, channel selection, latency measurement/xruns, professional hardware compatibility, full undo history, or portable legacy browser-project converter.
 - Cloud, mobile, AI/MCP, distributed editing, Follow Session and Live Show remain future work.
 - Automated CI success is not evidence of tested external interfaces or measured end-to-end hardware latency.
