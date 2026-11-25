@@ -1,6 +1,7 @@
 #pragma once
 
 #include "insert_processing.hpp"
+#include "fader_automation.hpp"
 #include "mixer_parameters.hpp"
 #include "playback_position.hpp"
 #include "metronome.hpp"
@@ -35,8 +36,9 @@ std::vector<Note> afterHours();
 class SessionAudio {
 public:
     explicit SessionAudio(const Project& project, SourceStorage storage = SourceStorage::sparseBlocks);
+    // Reference render with no Session inserts. Use renderProject for saved chains.
     Samples render(const MixerParameters& parameters, AudioBlockProcessor* effects = nullptr) const;
-    Samples renderProject(const Project& project) const;
+    Samples renderProject(const Project& project, const PreparedAutomation* automation = nullptr) const;
     std::size_t preparedBytes() const noexcept;
 
 private:
@@ -53,6 +55,8 @@ public:
     PlaybackMixer(const SessionAudio& audio, const MixerParameters& initial = {}, std::size_t startFrame = 0,
                   std::atomic<std::uint32_t>* peakMeter = nullptr, MixerParameterMailbox* mailbox = nullptr, bool loop = false, AudioBlockProcessor* effects = nullptr, bool click = false);
     void attachInserts(PreparedInserts* prepared) noexcept { inserts = prepared; }
+    // Curves are owned by the caller and must match this source snapshot.
+    void attachAutomation(const PreparedAutomation* curves) noexcept { automation = curves; }
     bool setLoopRegion(PlaybackLoop range) noexcept;
     void setParameters(const MixerParameters& parameters) noexcept;
     // Mix complete interleaved frames from the current position. No allocation.
@@ -71,6 +75,7 @@ private:
     std::size_t loopFirst = 0, loopEnd = 0;
     AudioBlockProcessor* effects;
     PreparedInserts* inserts = nullptr;
+    const PreparedAutomation* automation = nullptr;
     bool click;
     struct Ramp {
         double value = 1.;

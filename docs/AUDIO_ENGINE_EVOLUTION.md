@@ -149,10 +149,11 @@ space if tail audio needs to be included in an internal render.
 
 The deterministic checks cover invalid settings, gain, EQ response,
 linked compression, expected echoes, bypass, reset and PCM equivalence
-with unequal block sizes. Native projects and the desktop renderer still
-use dry defaults. User-facing insertion, per-track routing, persisted
-effects, automation, real-time editing of effect settings and third-party
-hosting require later increments with lifecycle and licensing reviews.
+with unequal block sizes. The [Alpha integration](OFFLINE_ALPHA_INTEGRATION.md)
+connects these processors to the master and track inserts and documents
+v4 persistence, editing, fresh state on seek, and release limits.
+Live coefficient editing, expanded routing, and third-party hosting need
+further lifecycle and licensing reviews.
 
 ## Arrangement gestures
 
