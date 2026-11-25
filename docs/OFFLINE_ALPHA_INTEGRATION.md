@@ -75,3 +75,21 @@ clip on its original track. With the Piano Roll focused after selecting
 a note, arrows nudge time or pitch and Shift+Left/Right changes duration.
 These actions use the current grid, or one tick when the grid is Off.
 No Session format change is required.
+
+
+## Selectable loop regions
+
+ENG-03. Locate the cursor using the ruler. In Commands, choose Set loop
+start at cursor and Set loop end at cursor, then enable Loop. The ruler
+highlights the selected span. The half-open region is at least 256 frames
+and stays within the current Session. Use whole-Session loop clears the
+region. Change it while stopped or paused. The region is a workspace
+transport choice and starts fresh on Session open.
+
+Playback starting outside the active loop enters at its first frame.
+The playhead maps the device's consumed frame count to the same range.
+Processor state is continuous across wraps, including when a device
+buffer spans several wraps. Stop, resume and seek still create fresh
+processor state. WAV export and experimental duplex retain one-shot
+behavior. Keyboard commands, a deterministic loop fixture and the
+Windows workspace check cover the boundary and rejection policy.

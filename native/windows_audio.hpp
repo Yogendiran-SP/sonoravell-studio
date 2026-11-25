@@ -119,7 +119,7 @@ public:
 
     void play(std::shared_ptr<const SessionAudio> session, std::unique_ptr<PreparedInserts> nextInserts,
               unsigned startFrame, unsigned deviceId,
-              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, bool loop = false, bool click = false) {
+              std::optional<WasapiOutputConfig> wasapi = {}, std::shared_ptr<DuplexNotices> duplex = {}, std::optional<PlaybackLoop> loop = {}, bool click = false) {
         stop();
         insertRack = std::move(nextInserts);
         lastUsedWasapi = wasapi.has_value();
@@ -129,7 +129,8 @@ public:
         try {
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
                                    wasapi = std::move(wasapi), duplex = std::move(duplex), loop, click](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, loop && !duplex, nullptr, click && !duplex);
+                PlaybackMixer mixer(*session, mixerParameters.readLatest(), startFrame, &peakMeter, &mixerParameters, false, nullptr, click && !duplex);
+                if (loop && !duplex) mixer.setLoopRegion(*loop);
                 mixer.attachInserts(insertRack.get());
                 if (wasapi) {
                     wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), played, stopToken,
