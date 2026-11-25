@@ -12,7 +12,7 @@ Physical hardware acceptance remains open.
 - C++20 Win32 native desktop app, CMake build, Linux/macOS core-library tests, and Windows packaged executable.
 - Native track creation, naming, duplication and reordering. The arrangement provides clip hit testing, source ranges, cached waveform previews and a configurable ruler grid.
 - Editable local `Project` with tracks, MIDI notes, audio clips, basic tempo/volume/mute and an in-memory Audio Pool.
-- `.sonora` v3 saves clip ranges, track mixer settings and master level. The reader migrates v1/v2 in memory and the writer preserves older Session files. See the [clip rules and parallel alpha gates](OFFLINE_DESKTOP_ALPHA.md).
+- `.sonora` v4 saves clip ranges, mixer settings, and master and track insert chains. The reader migrates v1–v3 in memory and the writer preserves older Session files. See the [clip rules and parallel alpha gates](OFFLINE_DESKTOP_ALPHA.md).
 - Independent playback has Pause/Resume, ruler seek, Seek to start, and an optional whole-Session loop and playback metronome. Export and experimental duplex remain one-shot.
 - PCM WAV import (16-bit mono/stereo, 44.1/48 kHz), simple resampling, placement of clips and use of the Audio Pool.
 - Single mono recording from the selected Windows input, finalized on Stop. The recording worker writes recoverable blocks to a local take journal. **Recover take…** restores the verified prefix when input or storage is interrupted.
@@ -24,7 +24,7 @@ Physical hardware acceptance remains open.
 - An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
 - The offline [hardware qualification tool](HARDWARE_QUALIFICATION.md) generates the reference Session and WAV, matches returned markers, and reports displacement, drift, and invalid evidence. The physical report template keeps hardware gates pending until measured.
 - A finalized experimental duplex take can export qualified attempt clocks and a PCM fingerprint beside its journal. This supports a checked QPC-to-signal comparison in the offline tool.
-- The internal block interface supports prepared gain, EQ, compressor and delay with deterministic offline/streamed equivalence. Processor insertion and persistence are not exposed in the desktop app.
+- Master Effects exposes persistent gain, EQ, compressor and delay inserts with live bypass and bounded processing. The engine processes saved per-track chains before the fader. See [alpha integration](OFFLINE_ALPHA_INTEGRATION.md).
 - Live track volume, balance, mute, solo and master ramps with stereo output-buffer peaks. The render worker applies complete parameter snapshots without rebuilding its source audio. Native view presets, adjustable side panels and named workspace files are independent of playback and Session state. Offline WAV export and CLI render use the Session mixer.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 

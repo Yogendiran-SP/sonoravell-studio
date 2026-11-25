@@ -56,9 +56,11 @@ Project afterHoursProject() {
 MixerParameters mixerParameters(const Project& project) noexcept {
     MixerParameters parameters;
     parameters.master = project.masterVolume / 100.;
+    parameters.masterBypass = insertBypassMask(project.masterInserts);
     const bool soloed = std::ranges::any_of(project.tracks, &Track::solo);
     for (std::size_t index = 0; index < std::min(project.tracks.size(), parameters.tracks.size()); ++index) {
         const auto& track = project.tracks[index];
+        parameters.trackBypass[index] = insertBypassMask(track.inserts);
         const double volume = track.muted || (soloed && !track.solo) ? 0. : track.volume / 100.;
         parameters.tracks[index] = {volume * (100 - std::max(track.pan, 0)) / 100.,
                                     volume * (100 + std::min(track.pan, 0)) / 100.};
@@ -119,6 +121,15 @@ Samples SessionAudio::render(const MixerParameters& parameters, AudioBlockProces
     return samples;
 }
 
+Samples SessionAudio::renderProject(const Project& project) const {
+    auto processors = prepareInserts(project);
+    Samples samples(sampleCount);
+    PlaybackMixer mixer(*this, mixerParameters(project));
+    mixer.attachInserts(processors.get());
+    mixer.read(samples);
+    return samples;
+}
+
 std::size_t SessionAudio::preparedBytes() const noexcept {
     std::size_t bytes = tracks.capacity() * sizeof(PreparedTrack) + metronome->scheduledBytes();
     for (const auto& track : tracks) bytes += track.preparedBytes();
@@ -159,6 +170,12 @@ void PlaybackMixer::setParameters(const MixerParameters& parameters) noexcept {
         gains[track][1].set(parameters.tracks[track].right);
     }
     master.set(parameters.master);
+    if (inserts) {
+        inserts->master.setBypass(parameters.masterBypass);
+        for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
+            inserts->tracks[track].setBypass(parameters.trackBypass[track]);
+        }
+    }
 }
 
 std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
@@ -181,22 +198,25 @@ std::size_t PlaybackMixer::read(std::span<std::int16_t> output) noexcept {
 
 void PlaybackMixer::mixBlock(std::span<std::int16_t> output, std::size_t index, std::size_t first,
                              std::array<unsigned, channelCount>& peaks) noexcept {
-    std::array<const float*, maxTracks> sources{};
-    for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
-        sources[track] = audio.tracks[track].block(index);
-    }
-    std::array<double, sourceBlockSamples> scratch;
-    for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {
-        double frame[channelCount]{};
-        for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
-            for (unsigned channel = 0; channel < channelCount; ++channel) {
-                const auto gain = gains[track][channel].next();
-                if (sources[track]) frame[channel] += sources[track][first + offset + channel] * gain;
-            }
-        }
-        for (unsigned channel = 0; channel < channelCount; ++channel) scratch[offset + channel] = frame[channel];
-    }
+    std::array<double, sourceBlockSamples> scratch{};
+    std::array<double, sourceBlockSamples> trackScratch;
     auto prepared = std::span(scratch).first(output.size());
+    auto trackBlock = std::span(trackScratch).first(output.size());
+    for (std::size_t track = 0; track < audio.tracks.size(); ++track) {
+        const auto* source = audio.tracks[track].block(index);
+        const bool process = inserts && !inserts->tracks[track].empty();
+        if (process) {
+            if (source) std::copy_n(source + first, trackBlock.size(), trackBlock.begin());
+            else std::ranges::fill(trackBlock, 0.);
+            inserts->tracks[track].process(trackBlock);
+        }
+        for (std::size_t i = 0; i < output.size(); ++i) {
+            const auto gain = gains[track][i % channelCount].next();
+            if (process) prepared[i] += trackBlock[i] * gain;
+            else if (source) prepared[i] += source[first + i] * gain;
+        }
+    }
+    if (inserts) inserts->master.process(prepared);
     if (effects) effects->process(prepared);
     if (click) audio.metronome->add(prepared, static_cast<unsigned>((index * sourceBlockSamples + first) / channelCount));
     for (std::size_t offset = 0; offset < output.size(); offset += channelCount) {

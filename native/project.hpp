@@ -1,5 +1,7 @@
 #pragma once
 
+#include "inserts.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
@@ -60,6 +62,7 @@ struct Track {
     std::vector<AudioClip> clips;
     int pan = 0;
     bool solo = false;
+    InsertList inserts{};
     bool operator==(const Track&) const = default;
 };
 
@@ -70,6 +73,7 @@ struct Project {
     std::vector<Track> tracks;
     std::vector<AudioAsset> assets;
     unsigned masterVolume = 100;
+    InsertList masterInserts{};
     bool operator==(const Project&) const = default;
 };
 
@@ -79,6 +83,7 @@ std::uint32_t sessionFrames(const Project& project);
 const AudioAsset& findAsset(const Project& project, std::uint32_t id);
 AudioClip wholeAudioClip(std::uint32_t id, const AudioAsset& asset, std::uint32_t tick);
 std::uint32_t newAudioClipId(const Project& project);
+void validateProjectInserts(const Project& project);
 void validateProject(const Project& project);
 std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick);
 AudioAsset readWave(std::istream& input, std::uint32_t id, std::string name, bool requireSessionRate = false);

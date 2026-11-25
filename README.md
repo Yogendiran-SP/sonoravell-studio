@@ -17,10 +17,11 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 | Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move, trim, split, duplicate, or delete the selected audio clip. Rename or remove a track. |
 | Browser | Import a PCM WAV, create instrument or audio tracks, or place an Audio Pool source. |
 | Mixer | Apply track volume, pan, mute, solo and master level during playback and see the stereo output peaks. |
+| Master Effects | Add, order, edit, bypass, or remove built-in master inserts through Commands. |
 | Focus | Expand Arrange and keep transport and file controls visible. |
 
 **Save as** writes a `.sonora` Session with embedded audio, MIDI, tempo, and track
-and master controls. **Open** reads versions 1, 2 and 3. Save a legacy Session to a new filename to preserve its original file. **Export** writes 48 kHz, 16-bit stereo WAV. Import
+and master controls. **Open** reads versions 1 through 4. Save a legacy Session to a new filename to preserve its original file. **Export** writes 48 kHz, 16-bit stereo WAV. Import
 supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. Use **Restore Session checkpoint…** in command search to restore an idle autosave with embedded audio. The native Session
 format has its own version and extension. Older browser project files require
 a separate migration path.

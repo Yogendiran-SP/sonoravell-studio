@@ -16,6 +16,7 @@
 #include "workspace_layout.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
+#include "windows_inserts.hpp"
 #include "windows_capture.hpp"
 #include "windows_devices.hpp"
 #include "windows_qpc.hpp"
@@ -53,7 +54,7 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId
 };
 
 Project project = afterHoursProject();
@@ -685,6 +686,7 @@ void refresh(HWND window, int index) {
     EnableWindow(field(window, undoId), !capture.active() && history.canUndo());
     EnableWindow(field(window, redoId), !capture.active() && history.canRedo());
     refreshTrack(window);
+    refreshInsertEditor(project.masterInserts, !capture.active());
     const auto rect = arrangeRect(window);
     InvalidateRect(window, &rect, FALSE);
 }
@@ -753,11 +755,11 @@ void checkpointIfIdle(HWND window) {
 }
 
 void applyEditedProject(HWND window, int index, EditImpact impact) {
-    if (impact == EditImpact::rebuildAudio) {
+    if (impact != EditImpact::liveMixer) {
         audio.stop();
-        prepared.reset();
         paused = false;
     }
+    if (impact == EditImpact::rebuildAudio) prepared.reset();
     totalFrames = sessionFrames(project);
     playFrom = std::min(playFrom, totalFrames - 1);
     audio.setMixer(mixerParameters(project));
@@ -771,6 +773,14 @@ void edit(HWND window, auto&& command, int index, EditImpact impact = EditImpact
     } else {
         refresh(window, index);
     }
+}
+
+std::uint32_t editMasterInsert(HWND window, const InsertCommand& command) {
+    if (capture.active()) throw std::runtime_error("Stop recording before editing effects.");
+    auto selection = command.id;
+    edit(window, [&](Project& draft) { selection = editInserts(draft.masterInserts, command); }, selectedTrack(window),
+         command.action == InsertAction::toggleBypass ? EditImpact::liveMixer : EditImpact::restartProcessing);
+    return selection;
 }
 
 void replayEdit(HWND window, bool redo) {
@@ -901,10 +911,10 @@ void showCommands(HWND window) {
          {widerBrowserId, L"Layout: Widen Browser"}, {narrowerBrowserId, L"Layout: Narrow Browser"},
          {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."},
          {pianoRollId, L"Toggle Piano Roll"}, {velocityUpId, L"Increase selected MIDI velocity"},
-         {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}}) {
+         {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}, {masterEffectsId, L"Master Effects..."}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
-        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId;
+        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId;
         const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
             : (!needsIdle || !capture.active()) && (!action || IsWindowEnabled(action));
         AppendMenuW(menu, MF_STRING | (available ? MF_ENABLED : MF_GRAYED),
@@ -1224,9 +1234,10 @@ void showAudioDevices(HWND window) {
 }
 
 void startPlayback(HWND window) {
+    auto inserts = prepareInserts(project);
     audio.setMixer(mixerParameters(project));
-    if (useWasapi) audio.play(renderedSession(), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback, metronomePlayback);
-    else audio.play(renderedSession(), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice),
+    if (useWasapi) audio.play(renderedSession(), std::move(inserts), playFrom, WAVE_MAPPER, wasapiConfig, {}, loopPlayback, metronomePlayback);
+    else audio.play(renderedSession(), std::move(inserts), playFrom, resolveWindowsAudioEndpoint(AudioDirection::output, outputChoice),
                     {}, {}, loopPlayback, metronomePlayback);
     paused = false;
     refreshTransport(window);
@@ -1243,6 +1254,7 @@ void startDuplex(HWND window, unsigned tick, unsigned capacity) {
         return;
     }
     const auto snapshot = renderedSession();
+    auto inserts = prepareInserts(project);
     auto output = wasapiConfig;
     const auto notices = std::make_shared<DuplexNotices>();
     audio.stop();
@@ -1253,7 +1265,7 @@ void startDuplex(HWND window, unsigned tick, unsigned capacity) {
     if (captureLaunched) {
         try {
             audio.setMixer(mixerParameters(project));
-            audio.play(snapshot, playFrom, WAVE_MAPPER, std::move(output), notices);
+            audio.play(snapshot, std::move(inserts), playFrom, WAVE_MAPPER, std::move(output), notices);
         } catch (...) {
             notices->renderExited(RenderError::driver);
         }
@@ -1580,6 +1592,12 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
+    if (id == masterEffectsId) {
+        showInsertEditor(window, project.masterInserts, [window](const InsertCommand& command) {
+            return editMasterInsert(window, command);
+        });
+        return;
+    }
     if (id == metronomeId) {
         if (audio.state() == Output::State::playing) {
             status(window, L"Pause or stop to change the playback metronome.");
@@ -1644,7 +1662,7 @@ void execute(HWND window, int id) {
     } else if (id == exportId) {
         const auto path = selectFile(window, true, wavFilter, L"wav");
         if (!path.empty()) {
-            const auto samples = renderedSession()->render(mixerParameters(project));
+            const auto samples = renderedSession()->renderProject(project);
             std::ofstream file(path, std::ios::binary);
             writeWave(file, samples);
             file.close();
@@ -2235,8 +2253,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const bool velocityOk = created && project.tracks[0].notes.front().velocity == 104;
         execute(window, deleteNoteId);
         const bool pianoOk = pianoRoll && velocityOk && project.tracks[0].notes.empty();
+        const auto effectSnapshot = renderedSession();
+        const auto gain = editMasterInsert(window, {InsertAction::add, 0, InsertKind::gain});
+        editMasterInsert(window, {InsertAction::parameter, gain, InsertKind::gain, 0, -60});
+        editMasterInsert(window, {InsertAction::toggleBypass, gain});
+        execute(window, undoId);
+        const bool insertOk = prepared == effectSnapshot && project.masterInserts.size() == 1 &&
+            project.masterInserts.front().values[0] == -60 && !project.masterInserts.front().bypassed;
         DestroyWindow(window);
-        return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
+        return insertOk && editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
                clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk && dragCancelled && pianoOk ? 0 : 1;
     }
     ShowWindow(window, show);
@@ -2253,7 +2278,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
             continue;
         }
         if (accelerator && TranslateAcceleratorW(window, accelerator, &message)) continue;
-        if (!IsDialogMessageW(window, &message)) {
+        if (!insertEditorMessage(message) && !IsDialogMessageW(window, &message)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }

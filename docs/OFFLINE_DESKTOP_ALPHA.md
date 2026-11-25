@@ -108,8 +108,9 @@ The `SONOSESS` v3 mixer layout adds one master-level byte after the bars and
 one encoded pan byte (pan + 100) and one solo byte after each track's
 volume. The reader validates the new ranges. V1/v2 open with master at
 100%, centered pan and solo off. Save an upgraded copy under a new filename.
-Older versions of the application cannot read v3. Checkpoint and take
-recovery remain independent.
+The current v4 writer also saves internal effects. See the
+[migration and rollback procedure](OFFLINE_ALPHA_INTEGRATION.md). Checkpoint
+and take recovery remain independent.
 
 Use Commands to select Beginner, Intermediate, Advanced, Pro, Recording,
 Arrange, Composition or Mix. Focus, individual panel visibility and

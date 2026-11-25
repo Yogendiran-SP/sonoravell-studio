@@ -22,7 +22,7 @@
 
 namespace sonoravell {
 namespace {
-constexpr std::uint32_t schemaVersion = 3;
+constexpr std::uint32_t schemaVersion = 4;
 constexpr std::uint32_t maxEventsPerTrack = 16384;
 constexpr std::uint64_t maxMixSamples = 64ull * 1024 * 1024; // 256 MiB of float track audio.
 constexpr std::size_t maxNameLength = 200;
@@ -92,6 +92,33 @@ void writePcm(std::ostream& file, const Samples& samples) {
     }
 }
 
+void writeInserts(std::ostream& file, const InsertList& inserts) {
+    writeNumber(file, static_cast<unsigned>(inserts.size()), 1);
+    for (const auto& entry : inserts) {
+        writeNumber(file, entry.id);
+        writeNumber(file, static_cast<unsigned>(entry.kind), 1);
+        writeNumber(file, static_cast<unsigned>(entry.enabled) | (static_cast<unsigned>(entry.bypassed) << 1), 1);
+        for (auto value : entry.values) writeNumber(file, std::bit_cast<std::uint32_t>(value));
+    }
+}
+
+InsertList readInserts(std::istream& file) {
+    const auto count = readNumber(file, 1);
+    require(count <= maxInsertsPerBus, "Too many effects on an insert bus.");
+    InsertList inserts;
+    for (unsigned i = 0; i < count; ++i) {
+        const auto id = readNumber(file);
+        const auto type = readNumber(file, 1);
+        const auto flags = readNumber(file, 1);
+        require(type <= static_cast<unsigned>(InsertKind::delay) && flags <= 3, "Invalid effect type or flags.");
+        EffectInsert entry{id, static_cast<InsertKind>(type), (flags & 1) != 0, (flags & 2) != 0};
+        for (auto& value : entry.values) value = std::bit_cast<std::int32_t>(readNumber(file));
+        inserts.push_back(entry);
+    }
+    validateInserts(inserts);
+    return inserts;
+}
+
 void writeProject(std::ostream& file, const Project& project) {
     file.write(signature.data(), signature.size());
     writeNumber(file, schemaVersion);
@@ -131,6 +158,8 @@ void writeProject(std::ostream& file, const Project& project) {
         writeNumber(file, static_cast<std::uint32_t>(asset.stereo().size()));
         writePcm(file, asset.stereo());
     }
+    writeInserts(file, project.masterInserts);
+    for (const auto& track : project.tracks) writeInserts(file, track.inserts);
 }
 
 Project readProject(std::istream& file) {
@@ -189,6 +218,10 @@ Project readProject(std::istream& file) {
         Samples audio(samples);
         readPcm(file, audio);
         project.assets.emplace_back(id, std::move(name), std::move(audio));
+    }
+    if (version >= 4) {
+        project.masterInserts = readInserts(file);
+        for (auto& track : project.tracks) track.inserts = readInserts(file);
     }
     require(file.peek() == std::char_traits<char>::eof() && !file.bad(), "Unexpected extra or unreadable Session data.");
     if (version == 1) {
@@ -330,12 +363,29 @@ std::uint32_t recordingCapacity(const Project& project, std::uint32_t tick) {
     }));
 }
 
+void validateProjectInserts(const Project& project) {
+    std::size_t total = 0;
+    unsigned delayMilliseconds = 0;
+    const auto validate = [&](const InsertList& list) {
+        validateInserts(list);
+        total += list.size();
+        for (const auto& entry : list) {
+            if (entry.kind == InsertKind::delay) delayMilliseconds += static_cast<unsigned>(entry.values[0]);
+        }
+    };
+    validate(project.masterInserts);
+    for (const auto& track : project.tracks) validate(track.inserts);
+    require(total <= maxSessionInserts && delayMilliseconds <= maxSessionDelayMilliseconds,
+            "The Session exceeds the effect count or delay memory budget.");
+}
+
 void validateProject(const Project& project) {
     validateName(project.name);
     require(project.tempo >= 30 && project.tempo <= 300 && project.bars >= 1 && project.bars <= maxBars,
             "Session tempo or length is outside the supported range.");
     require(project.masterVolume <= 100, "Invalid master level.");
     require(project.tracks.size() <= maxTracks && project.assets.size() <= maxAssets, "Too many tracks or audio sources.");
+    validateProjectInserts(project);
     std::vector<std::uint32_t> assetIds;
     std::size_t totalSamples = 0;
     for (const auto& asset : project.assets) {
