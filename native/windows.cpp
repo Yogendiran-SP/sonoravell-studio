@@ -6,6 +6,7 @@
 #include <commdlg.h>
 #include <mmsystem.h>
 
+#include "duplex_qualification.hpp"
 #include "session.hpp"
 #include "session_autosave.hpp"
 #include "windows_audio.hpp"
@@ -955,6 +956,10 @@ void pollDuplex(HWND window) {
     const auto* input = result.wasapi ? &*result.wasapi : nullptr;
     const auto relation = input && pairedOutput && duplexProgress.settledAt
         ? correlateClocks(input->stream.timing.clock, pairedOutput->clock, *duplexProgress.settledAt) : std::nullopt;
+    const auto exported = input && pairedOutput && duplexProgress.settledAt && !outcome.storageFailed
+        ? saveDuplexQualificationEvidence(result.path, result.take, playFrom, input->stream, pairedOutput->stream,
+                                           pairedOutput->clock, *duplexProgress.settledAt)
+        : DuplexEvidenceStatus::unqualified;
     const auto inputLabel = duplexEndpoint(input ? &input->resolved : nullptr, wasapiInputConfig.input);
     const auto outputLabel = duplexEndpoint(pairedOutput ? &pairedOutput->resolved : nullptr, wasapiConfig.output);
     lastDuplexDiagnostics = L"Attempt: " + std::to_wstring(duplexProgress.attempt) +
@@ -968,6 +973,25 @@ void pollDuplex(HWND window) {
             ? L"start offset " + std::to_wstring(relation->captureStartOffsetSeconds * 1000.0) + L" ms, drift " +
                 std::to_wstring(relation->captureRelativeDriftPpm) + L" ppm" : L"insufficient qualified overlap") +
         L"\nRound-trip latency: unmeasured";
+    lastDuplexDiagnostics += L"\nPaired clock sidecar: ";
+    switch (exported) {
+    case DuplexEvidenceStatus::saved: lastDuplexDiagnostics += L"Saved next to the take journal"; break;
+    case DuplexEvidenceStatus::unqualified: lastDuplexDiagnostics += L"Insufficient qualified evidence"; break;
+    case DuplexEvidenceStatus::writeFailed: lastDuplexDiagnostics += L"Could not write evidence. The take is available."; break;
+    }
+    if (input) {
+        const auto& stream = input->stream;
+        lastDuplexDiagnostics += L"\nInput buffer request / selected / allocated (frames): " +
+            std::to_wstring(stream.requestedPeriodFrames) + L" / " + std::to_wstring(stream.selectedPeriodFrames) +
+            L" / " + std::to_wstring(stream.bufferFrames);
+    }
+    if (pairedOutput) {
+        const auto& stream = pairedOutput->stream;
+        lastDuplexDiagnostics += L"\nOutput buffer request / selected / allocated (frames): " +
+            std::to_wstring(stream.requestedFrames) + L" / " + std::to_wstring(stream.selectedPeriodFrames) +
+            L" / " + std::to_wstring(stream.bufferFrames) +
+            L"\nEmpty render-buffer events (suspected underruns): " + std::to_wstring(stream.emptyBufferEvents);
+    }
     if (input) lastDuplexDiagnostics += L"\n\nInput clock" + clockDiagnostics(input->stream.timing.clock);
     if (pairedOutput) lastDuplexDiagnostics += L"\n\nOutput clock" + clockDiagnostics(pairedOutput->clock);
     const bool recovered = !result.take.stereo.empty();

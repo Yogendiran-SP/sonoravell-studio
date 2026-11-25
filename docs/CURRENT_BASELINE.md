@@ -1,6 +1,6 @@
 # Current native-development baseline
 
-Audit date: 2026-11-24. The experimental transport starts at `a4e4b5868e8f506b7bae66fe5bc6ea5abf376a72`, the merge of [PR #15](https://github.com/Yogendiran-SP/sonoravell-studio/pull/15) for coordination. The [clock](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425130199) and [coordination](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45425931355) checks passed on Windows, macOS and Linux. Earlier increments include [take recovery](https://github.com/Yogendiran-SP/sonoravell-studio/pull/8), [Session checkpoints](https://github.com/Yogendiran-SP/sonoravell-studio/pull/9), [WinMM selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/10), [WASAPI output selection](https://github.com/Yogendiran-SP/sonoravell-studio/pull/12) and [journaled WASAPI input](https://github.com/Yogendiran-SP/sonoravell-studio/pull/13).
+Audit date: 2026-11-24. The paired evidence increment starts at `b91b583a908a19f16133f8dd62b06bca6ac17be6`, the merge of [PR #17](https://github.com/Yogendiran-SP/sonoravell-studio/pull/17) for offline loopback qualification. Its [Windows, macOS and Linux checks](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45443625429) passed. The hardware audit began at `bd9a77a6ef87aaa72f0f348e901463e073f142fe`, the merge of [PR #16](https://github.com/Yogendiran-SP/sonoravell-studio/pull/16) for the experimental transport. Its [native CI](https://github.com/Yogendiran-SP/sonoravell-studio/actions/runs/45439010829) used scripted endpoints. Physical hardware gates remain open.
 
 ## Implemented in repository source
 
@@ -16,6 +16,7 @@ Audit date: 2026-11-24. The experimental transport starts at `a4e4b5868e8f506b7b
 - Independent [WASAPI clock diagnostics](WASAPI_CLOCKS.md) record capture and render position/QPC anchors. The paired clock model is exercised with simulated streams.
 - An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
 - The offline [hardware qualification tool](HARDWARE_QUALIFICATION.md) generates the reference Session and WAV, matches returned markers, and reports displacement, drift, and invalid evidence. The physical report template keeps hardware gates pending until measured.
+- A finalized experimental duplex take can export qualified attempt clocks and a PCM fingerprint beside its journal. This supports a checked QPC-to-signal comparison in the offline tool.
 - Live track mute ramps, offline stereo WAV export, CLI saved-project render.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 

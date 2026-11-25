@@ -15,7 +15,9 @@ build. Session and journal formats are compatible with earlier builds.
 
 ## Generate and analyze
 
-From a Windows package or CMake build, run the following in PowerShell.
+From a Windows package or CMake build, run the following in PowerShell 7.
+On Windows PowerShell 5.1, pipe the JSON to `Set-Content -Encoding UTF8 run-01.json`
+if the report needs UTF-8 output.
 
 ~~~powershell
 .\sonoravell-qualify.exe generate .\qualification-reference
@@ -67,9 +69,13 @@ and a clean match are evidence for one attempted configuration.
 
 The optional comparison reads the versioned `.duplex-clock.tsv` sibling of a
 finalized journal. It requires the same frame count and PCM fingerprint, and a zero playback
-origin. Archive the journal and its sidecar together. PR #16 displays timing
-evidence in the UI. The follow-up instrumentation exports paired evidence
-for the analyzer. Clock-origin differences alone provide no analog round-trip
+origin. Archive the journal and its sidecar together. After a settled,
+finalized duplex attempt with no endpoint or storage error and qualified
+clock overlap, the control thread writes the sidecar beside the journal.
+Independent, interrupted, or unqualified attempts can still be analyzed for
+returned markers. A failed evidence write leaves the take available. The
+duplex diagnostics also show both buffer configurations and render underrun
+indicators. Clock-origin differences alone provide no analog round-trip
 measurement. Capture remains unmodified throughout analysis.
 
 ## Windows runs and acceptance gates
