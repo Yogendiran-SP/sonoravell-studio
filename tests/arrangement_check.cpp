@@ -37,6 +37,11 @@ int main() {
     check(snapTimelineTick(7000, 1920, 0) == 1919);
     check(snapTimelineTick(500, 0, 0) == 0);
 
+    check(dragTimelineTick(960, 25, 100, 1920, 1920, 60) == 1440);
+    check(dragTimelineTick(960, -25, 100, 1920, 1920, 60) == 480);
+    check(dragTimelineTick(8, -55, 100, 1920, 1920, 60) == 0);
+    check(dragTimelineTick(25, 0, 100, 1920, 1920, 60) == 25);
+    check(dragTimelineTick(1700, 200, 100, 1920, 1920, 0) == 1919);
     const WaveformPeaks peaks(project.assets.front());
     check(peaks.peak(0, 1) == 200 && peaks.peak(1, 2) == 0);
     check(peaks.peak(1, 3) == 32768 && peaks.peak(3, 200) == 30 && peaks.peak(4, 200) == 0);

@@ -85,6 +85,15 @@ EditHistory history;
 std::uint32_t selectedClipId = 0;
 constexpr std::array gridSteps{0u, ticksPerBeat, ticksPerBeat / 4, ticksPerBeat / 16};
 unsigned gridIndex = 1;
+struct ClipDrag {
+    std::uint32_t clipId;
+    ClipEdit operation;
+    unsigned anchor;
+    int startX;
+    unsigned target;
+    bool moved = false;
+};
+std::optional<ClipDrag> clipDrag;
 struct CachedWaveform {
     AudioAsset asset;
     WaveformPeaks peaks;
@@ -397,6 +406,12 @@ void drawArrangement(HWND window) {
             const bool chosen = static_cast<int>(index) == selected && clip.id == selectedClipId;
             fill(dc, rect, chosen ? RGB(30, 91, 157) : track.muted ? GetSysColor(COLOR_GRAYTEXT) : RGB(82, 143, 207));
             drawWaveform(dc, rect, clip);
+            if (chosen && rect.right - rect.left >= 14) {
+                const RECT leftHandle{rect.left, rect.top, rect.left + 2, rect.bottom};
+                const RECT rightHandle{rect.right - 2, rect.top, rect.right, rect.bottom};
+                FillRect(dc, &leftHandle, GetSysColorBrush(COLOR_HIGHLIGHTTEXT));
+                FillRect(dc, &rightHandle, GetSysColorBrush(COLOR_HIGHLIGHTTEXT));
+            }
         }
         RECT line{panel.left + 5, top + rowHeight - 1, panel.right - 8, top + rowHeight};
         FillRect(dc, &line, GetSysColorBrush(COLOR_BTNFACE));
@@ -427,6 +442,11 @@ void drawArrangement(HWND window) {
     const int x = xOf(playbackFrame(totalFrames, playFrom, playing ? audio.framesPlayed() : 0, loopPlayback && !duplex.active()));
     const RECT playhead{x, ruler.top, x + (playing ? 2 : 1), gridTop + height};
     fill(dc, playhead, RGB(220, 105, 39));
+    if (clipDrag && clipDrag->moved) {
+        const int target = xOf(frameAtTick(clipDrag->target, project.tempo));
+        const RECT guide{target, ruler.top, target + 2, gridTop + height};
+        FillRect(dc, &guide, GetSysColorBrush(COLOR_HIGHLIGHT));
+    }
     RestoreDC(dc, savedDc);
     EndPaint(window, &paint);
 }
@@ -1282,7 +1302,51 @@ void transferLayout(HWND window, bool save) {
     changeLayout(window);
 }
 
+void clearClipDrag(HWND window) {
+    if (!clipDrag) return;
+    clipDrag.reset();
+    if (GetCapture() == window) ReleaseCapture();
+    const auto panel = arrangeRect(window);
+    InvalidateRect(window, &panel, FALSE);
+}
+
+void updateClipDrag(HWND window, int x) {
+    if (!clipDrag) return;
+    const auto delta = x - clipDrag->startX;
+    if (std::abs(delta) < 4) {
+        clipDrag->moved = false;
+    } else {
+        const auto panel = arrangeRect(window);
+        const unsigned bound = clipDrag->operation == ClipEdit::trimEnd ? maxTimelineTick + 1 : maxTimelineTick;
+        clipDrag->target = dragTimelineTick(clipDrag->anchor, delta, panel.right - panel.left - 110,
+                                            timelineEndTick(), bound, gridSteps[gridIndex]);
+        clipDrag->moved = clipDrag->target != clipDrag->anchor;
+    }
+    const auto panel = arrangeRect(window);
+    InvalidateRect(window, &panel, FALSE);
+}
+
+void beginClipDrag(HWND window, const AudioClip& clip, const RECT& box, int x) {
+    auto operation = ClipEdit::move;
+    auto anchor = clip.tick;
+    if (box.right - box.left >= 14) {
+        if (x < box.left + 5) operation = ClipEdit::trimStart;
+        else if (x >= box.right - 5) {
+            operation = ClipEdit::trimEnd;
+            const auto end = frameAtTick(clip.tick, project.tempo) + clip.frameCount;
+            constexpr auto divisor = 60u * sampleRate;
+            anchor = static_cast<unsigned>((static_cast<std::uint64_t>(end) * project.tempo * ticksPerBeat +
+                                            divisor / 2) / divisor);
+        }
+    }
+    clipDrag = ClipDrag{clip.id, operation, anchor, x, anchor};
+    SetFocus(window);
+    SetCapture(window);
+    if (GetCapture() != window) clearClipDrag(window);
+}
+
 void execute(HWND window, int id) {
+    clearClipDrag(window);
     if (id == commandId) { showCommands(window); return; }
     if (id == queryFocusId) { SetFocus(field(window, queryId)); return; }
     if (id >= beginnerLayoutId && id <= composeLayoutId) {
@@ -1628,6 +1692,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case WM_SIZE:
+            clearClipDrag(window);
             layout(window);
             return 0;
         case WM_DRAWITEM:
@@ -1639,6 +1704,29 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         case WM_PAINT:
             drawArrangement(window);
             return 0;
+        case WM_MOUSEMOVE:
+            if (clipDrag) { updateClipDrag(window, GET_X_LPARAM(lParam)); return 0; }
+            break;
+        case WM_LBUTTONUP:
+            if (clipDrag) {
+                updateClipDrag(window, GET_X_LPARAM(lParam));
+                const auto drag = *clipDrag;
+                clearClipDrag(window);
+                if (drag.moved && !capture.active()) {
+                    edit(window, [&](Project& draft) { editAudioClip(draft, drag.clipId, drag.operation, drag.target); },
+                         selectedTrack(window));
+                    status(window, L"Updated the audio clip. Undo restores its previous position or range.");
+                }
+                return 0;
+            }
+            break;
+        case WM_CAPTURECHANGED:
+        case WM_CANCELMODE:
+            clearClipDrag(window);
+            break;
+        case WM_KEYDOWN:
+            if (wParam == VK_ESCAPE && clipDrag) { clearClipDrag(window); return 0; }
+            break;
         case WM_LBUTTONDOWN: {
             const auto panel = arrangeRect(window);
             const auto x = GET_X_LPARAM(lParam);
@@ -1663,7 +1751,11 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                     for (auto it = clips.rbegin(); it != clips.rend(); ++it) {
                         const auto start = frameAtTick(it->tick, project.tempo);
                         const auto box = arrangementBlock(panel, top, rowHeight, start, start + it->frameCount);
-                        if (PtInRect(&box, point)) { selectedClipId = it->id; break; }
+                        if (PtInRect(&box, point)) {
+                            selectedClipId = it->id;
+                            if (!capture.active()) beginClipDrag(window, *it, box, x);
+                            break;
+                        }
                     }
                     refreshTrack(window);
                     InvalidateRect(window, &panel, FALSE);
@@ -1873,9 +1965,22 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const bool persistedLayoutOk = !composed.browser && composed.inspector && wider.inspectorWidth > composed.inspectorWidth &&
             decodeWorkspace(encodeWorkspace(wider)) == wider && currentLayout() == WorkspaceLayout{} &&
             project == beforeTransport && prepared == beforeMixer && IsWindowEnabled(field(window, stopId));
+        const auto beforeDrag = project;
+        const auto lane = arrangeRect(window);
+        const auto laneTop = lane.top + 58 + arrangementRowHeight(lane);
+        const auto initialClip = project.tracks[1].clips.back();
+        const int xClip = timelineX(lane, frameAtTick(initialClip.tick, project.tempo));
+        SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(xClip, laneTop + 7));
+        SendMessageW(window, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(xClip + 35, laneTop + 7));
+        const bool dragStaged = project == beforeDrag && clipDrag && clipDrag->moved;
+        SendMessageW(window, WM_LBUTTONUP, 0, MAKELPARAM(xClip + 35, laneTop + 7));
+        const bool dragCommitted = project != beforeDrag && !clipDrag &&
+                               project.assets.front().stereo().data() == source;
+        execute(window, undoId);
+        const bool gesturesOk = dragStaged && dragCommitted && project == beforeDrag;
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},
