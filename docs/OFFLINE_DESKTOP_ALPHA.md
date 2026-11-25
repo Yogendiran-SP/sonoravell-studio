@@ -111,9 +111,13 @@ volume. The reader validates the new ranges. V1/v2 open with master at
 Older versions of the application cannot read v3. Checkpoint and take
 recovery remain independent.
 
-Use Commands to select Beginner, Intermediate, Advanced, Pro, Arrange or
-Mix layouts and toggle individual panels. These views affect visibility for
-the open application only. Focus and presets retain transport controls. No
-view change edits the Session, rebuilds its prepared audio, or adds an undo
-entry. Docking, saved custom layouts and further progressive disclosure
-remain in the broader interface roadmap.
+Use Commands to select Beginner, Intermediate, Advanced, Pro, Recording,
+Arrange, Composition or Mix. Focus, individual panel visibility and
+side-panel widths retain transport controls and preserve saved Session
+data, playback and editing history. The last layout persists for the
+Windows user, and named local layout files can be saved and reopened.
+Floating and full docking remain roadmap items.
+
+The [audio engine evolution record](AUDIO_ENGINE_EVOLUTION.md) describes
+the independent playback controls, graphical MIDI editing, software
+verification and remaining release gates.

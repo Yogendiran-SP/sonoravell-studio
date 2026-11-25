@@ -11,11 +11,12 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 
 | Workspace | What you can do |
 | --- | --- |
-| Transport | Record from the selected Windows input, play, pause and resume, seek, loop, stop, change tempo, and undo or redo edits. Stop finalizes a disk-backed take as a new audio track. |
-| Arrange | See MIDI notes and waveform previews. Click a clip to inspect it or the ruler to set the playback start using the selected grid. |
+| Transport | Record from the selected Windows input, play, pause and resume, seek, loop, toggle the playback metronome, stop, change tempo, and undo or redo edits. Stop finalizes a disk-backed take as a new audio track. |
+| Arrange | See MIDI notes and waveform previews. Drag clips to move them, drag visible end handles to trim, or click the ruler to seek on the selected grid. |
+| Piano Roll | Ctrl+P opens the selected instrument track. Click to add notes, drag to move or resize, use the wheel for velocity, and right-click to delete. |
 | Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move, trim, split, duplicate, or delete the selected audio clip. Rename or remove a track. |
 | Browser | Import a PCM WAV, create instrument or audio tracks, or place an Audio Pool source. |
-| Mixer | Set track volume and pan, mute or solo during playback, and adjust master level with stereo output peak meters. |
+| Mixer | Apply track volume, pan, mute, solo and master level during playback and see the stereo output peaks. |
 | Focus | Expand Arrange and keep transport and file controls visible. |
 
 **Save as** writes a `.sonora` Session with embedded audio, MIDI, tempo, and track
@@ -25,7 +26,7 @@ format has its own version and extension. Older browser project files require
 a separate migration path.
 
 Use Ctrl+F to focus **Find a command**, type a term, and press Enter to see matching
-commands. It also provides panel toggles, Beginner–Pro display presets, and Arrange/Mix layouts. Ctrl+O
+commands. Commands provides panel toggles and widths, Beginner–Pro and workflow presets, and local layout file operations. Ctrl+O
 opens a Session, Ctrl+Shift+S opens Save As, and Ctrl+Z and Ctrl+Y step through the last 24 edits.
 
 ## Build and test

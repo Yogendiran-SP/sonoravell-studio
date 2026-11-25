@@ -188,3 +188,19 @@ data and the playback snapshot alone. Portable tests check pitch rows,
 velocity, time bounds and resizing. The Windows workspace smoke exercises
 note creation, velocity adjustment and deletion. Keyboard-only and
 assistive-technology usability verification remains open.
+
+## Independent playback metronome
+
+ENG-03. Toggle the playback metronome with Ctrl+M or Commands while
+stopped or paused. The click follows Session tempo at the same integer
+frame boundaries as clips and notes and accents the first beat of each
+bar. The reference click waveforms and beat positions are prepared with
+the snapshot. Each render block adds only overlapping clicks, after
+effects and before master level and metering. The click starts in the
+right phase when seeking or looping.
+
+Click playback applies to independent WinMM and WASAPI output. WAV export,
+independent capture, experimental duplex and Session storage are unaffected.
+Recording count-in remains a later acceptance item. Automated tests cover
+positions at fractional frames per beat, downbeat accent, continuity when
+seeking, a wrapped device buffer and clean WAV source PCM.
