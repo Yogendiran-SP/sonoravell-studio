@@ -46,7 +46,9 @@ enum ControlId {
     startDuplexId, duplexReportId, redoId, clipListId, splitClipId, trimStartId, trimEndId, duplicateClipId, deleteClipId,
     mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, statusId,
     trackNameId, renameTrackId, duplicateTrackId, trackUpId, trackDownId, addAudioTrackId, clipRangeId,
-    gridBeatId, gridQuarterId, gridSixteenthId, gridOffId, placeOnTrackId
+    gridBeatId, gridQuarterId, gridSixteenthId, gridOffId, placeOnTrackId,
+    soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
+    beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId
 };
 
 Project project = afterHoursProject();
@@ -102,6 +104,15 @@ ULONGLONG autosaveAfter = 0;
 SessionAutosave autosave;
 bool focused = false;
 bool inspectorShown = true, browserShown = true, mixerShown = true;
+struct WorkspaceLayout { bool inspector; bool browser; bool mixer; };
+constexpr std::array workspaceLayouts{
+    WorkspaceLayout{true, true, false},  // Beginner
+    WorkspaceLayout{true, false, true},  // Intermediate
+    WorkspaceLayout{false, true, true},  // Advanced
+    WorkspaceLayout{true, true, true},   // Pro
+    WorkspaceLayout{true, false, false}, // Arrange
+    WorkspaceLayout{false, false, true}  // Mix
+};
 unsigned playFrom = 0;
 std::uint32_t totalFrames = sessionFrames(project);
 
@@ -178,7 +189,8 @@ void layout(HWND window) {
     show({inspectorId, trackLabelId, trackListId, beatLabelId, beatId, trackNameId, renameTrackId, removeId}, inspectorShown);
     showInspectorEventControls(window);
     show({browserId, importId, addTrackId, addAudioTrackId, assetListId, placeId, recoverId}, browserShown);
-    show({mixerId, volumeLabelId, volumeId, volumeApplyId, muteId}, mixerShown);
+    show({mixerId, volumeLabelId, volumeId, volumeApplyId, muteId, soloId,
+          panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId}, mixerShown);
     place(inspectorId, 10, 91, 173, height - 176);
     place(trackLabelId, 22, 122, 145, 18);
     place(trackListId, 22, 143, 148, 280);
@@ -211,10 +223,17 @@ void layout(HWND window) {
     place(assetListId, width - 171, 242, 148, height - 491);
     place(placeId, width - 171, height - 241, 148, 28);
     place(mixerId, 10, height - 77, width - 20, 50);
-    place(volumeLabelId, 25, height - 54, 94, 18);
-    place(volumeId, 119, height - 58, 45, 24);
-    place(volumeApplyId, 171, height - 60, 65, 28);
-    place(muteId, 250, height - 57, 110, 23);
+    place(volumeLabelId, 25, height - 53, 63, 18);
+    place(volumeId, 88, height - 58, 38, 24);
+    place(panLabelId, 136, height - 53, 26, 18);
+    place(panId, 164, height - 58, 42, 24);
+    place(volumeApplyId, 213, height - 60, 48, 28);
+    place(muteId, 272, height - 57, 53, 23);
+    place(soloId, 327, height - 57, 52, 23);
+    place(masterLabelId, 393, height - 53, 65, 18);
+    place(masterId, 460, height - 58, 38, 24);
+    place(masterApplyId, 505, height - 60, 48, 28);
+    place(meterId, 569, height - 61, width - 596, 30);
     place(statusId, 14, height - 21, width - 30, 18);
     InvalidateRect(window, nullptr, TRUE);
 }
@@ -231,6 +250,25 @@ void fill(HDC dc, const RECT& rect, COLORREF color) {
     if (brush) {
         FillRect(dc, &rect, brush);
         DeleteObject(brush);
+    }
+}
+
+void drawMasterMeter(const DRAWITEMSTRUCT& item) {
+    const auto dc = item.hDC;
+    const auto area = item.rcItem;
+    FillRect(dc, &area, GetSysColorBrush(COLOR_BTNFACE));
+    SetBkMode(dc, TRANSPARENT);
+    SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+    SetTextColor(dc, GetSysColor(COLOR_BTNTEXT));
+    const auto levels = audio.state() == Output::State::playing ? audio.meter() : 0u;
+    for (int channel = 0; channel < 2; ++channel) {
+        const auto y = area.top + channel * 14;
+        TextOutW(dc, area.left + 2, y, channel ? L"R" : L"L", 1);
+        RECT bar{area.left + 17, y + 4, area.right - 2, y + 11};
+        FillRect(dc, &bar, GetSysColorBrush(COLOR_3DSHADOW));
+        const auto peak = (levels >> (channel * 16)) & 0xffffu;
+        bar.right = bar.left + static_cast<LONG>((bar.right - bar.left) * peak / 32767);
+        fill(dc, bar, peak >= 32767 ? RGB(212, 79, 57) : RGB(35, 144, 112));
     }
 }
 
@@ -408,7 +446,7 @@ void refreshTrack(HWND window) {
     const int index = selectedTrack(window);
     const bool selected = index >= 0 && index < static_cast<int>(project.tracks.size());
     const bool safeToEdit = selected && !capture.active();
-    for (int id : {volumeId, volumeApplyId, muteId}) EnableWindow(field(window, id), safeToEdit);
+    for (int id : {volumeId, volumeApplyId, muteId, soloId, panId}) EnableWindow(field(window, id), safeToEdit);
     EnableWindow(field(window, beatId), !capture.active());
     bool instrument = false, audioClip = false, hasNotes = false;
     const auto noteList = field(window, noteListId);
@@ -424,6 +462,8 @@ void refreshTrack(HWND window) {
         audioClip = !track.clips.empty();
         SetDlgItemInt(window, volumeId, track.volume, FALSE);
         CheckDlgButton(window, muteId, track.muted ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(window, soloId, track.solo ? BST_CHECKED : BST_UNCHECKED);
+        SetDlgItemInt(window, panId, static_cast<UINT>(track.pan), TRUE);
         SetDlgItemTextW(window, beatId, beatText(audioClip ? track.clips.front().tick : 0).c_str());
         int activeClip = 0;
         for (std::size_t i = 0; i < track.clips.size(); ++i) {
@@ -448,6 +488,8 @@ void refreshTrack(HWND window) {
     } else {
         SetDlgItemTextW(window, volumeId, L"");
         CheckDlgButton(window, muteId, BST_UNCHECKED);
+        CheckDlgButton(window, soloId, BST_UNCHECKED);
+        SetDlgItemTextW(window, panId, L"");
     }
     EnableWindow(field(window, pitchId), safeToEdit && instrument);
     EnableWindow(field(window, noteId), safeToEdit && instrument);
@@ -482,7 +524,8 @@ void refresh(HWND window, int index) {
     if (!project.assets.empty()) SendMessageW(sources, LB_SETCURSEL, 0, 0);
     EnableWindow(field(window, placeId), !capture.active() && !project.assets.empty());
     SetDlgItemInt(window, tempoId, project.tempo, FALSE);
-    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, addAudioTrackId, tempoApplyId, recoverId, deviceId}) {
+    SetDlgItemInt(window, masterId, project.masterVolume, FALSE);
+    for (int id : {newId, demoId, openId, saveId, exportId, playId, recordId, importId, addTrackId, addAudioTrackId, tempoApplyId, recoverId, deviceId, masterId, masterApplyId}) {
         EnableWindow(field(window, id), !capture.active());
     }
     EnableWindow(field(window, undoId), !capture.active() && history.canUndo());
@@ -694,7 +737,9 @@ void showCommands(HWND window) {
          {addAudioTrackId, L"Add audio track"}, {renameTrackId, L"Rename track"}, {duplicateTrackId, L"Duplicate track"},
          {trackUpId, L"Move track up"}, {trackDownId, L"Move track down"},
          {gridBeatId, L"Grid: 1 beat"}, {gridQuarterId, L"Grid: 1/4 beat"}, {gridSixteenthId, L"Grid: 1/16 beat"},
-         {gridOffId, L"Grid: Off"}}) {
+         {gridOffId, L"Grid: Off"}, {beginnerLayoutId, L"Layout: Beginner"},
+         {intermediateLayoutId, L"Layout: Intermediate"}, {advancedLayoutId, L"Layout: Advanced"},
+         {proLayoutId, L"Layout: Pro"}, {arrangeLayoutId, L"Layout: Arrange"}, {mixLayoutId, L"Layout: Mix"}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
         const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
@@ -1137,6 +1182,16 @@ void pollDuplex(HWND window) {
 void execute(HWND window, int id) {
     if (id == commandId) { showCommands(window); return; }
     if (id == queryFocusId) { SetFocus(field(window, queryId)); return; }
+    if (id >= beginnerLayoutId && id <= mixLayoutId) {
+        const auto view = workspaceLayouts[id - beginnerLayoutId];
+        inspectorShown = view.inspector;
+        browserShown = view.browser;
+        mixerShown = view.mixer;
+        focused = false;
+        SetDlgItemTextW(window, focusId, L"Focus");
+        layout(window);
+        return;
+    }
     if (id == focusId || id == toggleInspectorId || id == toggleBrowserId || id == toggleMixerId || id == resetLayoutId) {
         if (id == focusId) focused = !focused;
         else {
@@ -1280,6 +1335,10 @@ void execute(HWND window, int id) {
         status(window, isAudio ? L"Added an empty audio track." : L"Added an instrument. Set Start beat and Pitch, then choose Add note.");
     } else if (id == undoId || id == redoId) {
         replayEdit(window, id == redoId);
+    } else if (id == masterApplyId) {
+        const auto level = value(window, masterId, 0, 100, "Enter a master level from 0 to 100 percent.");
+        edit(window, [level](Project& draft) { draft.masterVolume = level; }, selectedTrack(window));
+        status(window, L"Updated the master level.");
     } else if (id == tempoApplyId) {
         const auto tempo = value(window, tempoId, 30, 300, "Set tempo between 30 and 300 BPM.");
         edit(window, [tempo](Project& draft) { draft.tempo = tempo; }, selectedTrack(window));
@@ -1288,9 +1347,13 @@ void execute(HWND window, int id) {
         const int index = selectedTrack(window);
         if (index < 0 || index >= static_cast<int>(project.tracks.size())) return;
         const auto& track = project.tracks[index];
-        if (id == muteId) {
-            const auto mute = IsDlgButtonChecked(window, muteId) == BST_CHECKED;
-            edit(window, [=](Project& draft) { draft.tracks[index].muted = mute; }, index, EditImpact::liveMute);
+        if (id == muteId || id == soloId) {
+            const auto state = IsDlgButtonChecked(window, id) == BST_CHECKED;
+            edit(window, [=](Project& draft) {
+                auto& selected = draft.tracks[index];
+                if (id == muteId) selected.muted = state;
+                else selected.solo = state;
+            }, index, EditImpact::liveMute);
         } else if (id == renameTrackId) {
             wchar_t name[202]{};
             const auto size = GetDlgItemTextW(window, trackNameId, name, static_cast<int>(std::size(name)));
@@ -1312,8 +1375,14 @@ void execute(HWND window, int id) {
             status(window, L"Removed track. Undo can restore it.");
         } else if (id == volumeApplyId) {
             const auto volume = value(window, volumeId, 0, 100, "Enter a level from 0 to 100 percent.");
-            edit(window, [=](Project& draft) { draft.tracks[index].volume = volume; }, index);
-            status(window, L"Updated track level.");
+            BOOL converted = FALSE;
+            const auto pan = static_cast<int>(GetDlgItemInt(window, panId, &converted, TRUE));
+            if (!converted || pan < -100 || pan > 100) throw std::runtime_error("Enter pan from -100 to 100.");
+            edit(window, [=](Project& draft) {
+                draft.tracks[index].volume = volume;
+                draft.tracks[index].pan = pan;
+            }, index);
+            status(window, L"Updated track volume and pan.");
         } else if ((id == noteId || id == updateNoteId || id == deleteNoteId) && track.instrument != Instrument::audio) {
             const auto selected = SendMessageW(field(window, noteListId), CB_GETCURSEL, 0, 0);
             if (id != noteId && (selected < 0 || static_cast<std::size_t>(selected) >= track.notes.size())) return;
@@ -1396,7 +1465,14 @@ void createWorkspace(HWND window) {
     addControl(window, mixerId, L"BUTTON", L"Mixer  /  Selected track", BS_GROUPBOX);
     addControl(window, volumeLabelId, L"STATIC", L"Volume (%)");
     addControl(window, volumeId, L"EDIT", L"100", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
-    addControl(window, muteId, L"BUTTON", L"Mute track", WS_TABSTOP | BS_AUTOCHECKBOX);
+    addControl(window, muteId, L"BUTTON", L"Mute", WS_TABSTOP | BS_AUTOCHECKBOX);
+    addControl(window, soloId, L"BUTTON", L"Solo", WS_TABSTOP | BS_AUTOCHECKBOX);
+    addControl(window, panLabelId, L"STATIC", L"Pan");
+    addControl(window, panId, L"EDIT", L"0", WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, masterLabelId, L"STATIC", L"Master (%)");
+    addControl(window, masterId, L"EDIT", L"100", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE);
+    addControl(window, masterApplyId, L"BUTTON", L"Apply", WS_TABSTOP | BS_PUSHBUTTON);
+    addControl(window, meterId, L"STATIC", L"", SS_OWNERDRAW);
     addControl(window, statusId, L"STATIC", L"Ready.");
     refresh(window, 0);
     layout(window);
@@ -1417,6 +1493,12 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         case WM_SIZE:
             layout(window);
             return 0;
+        case WM_DRAWITEM:
+            if (wParam == meterId) {
+                drawMasterMeter(*reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
+                return TRUE;
+            }
+            break;
         case WM_PAINT:
             drawArrangement(window);
             return 0;
@@ -1462,7 +1544,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
                 pickNote(window);
             } else if (id == clipListId && HIWORD(wParam) == CBN_SELCHANGE) {
                 pickClip(window);
-            } else if (id != muteId || HIWORD(wParam) == BN_CLICKED) {
+            } else if ((id != muteId && id != soloId) || HIWORD(wParam) == BN_CLICKED) {
                 auto control = field(window, id);
                 if (!control || IsWindowEnabled(control)) execute(window, id);
             }
@@ -1470,6 +1552,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT event, WPARAM wParam, LPARAM lPara
         }
         case WM_TIMER: {
             if (wParam != transportTimer) return 0;
+            if (!focused && mixerShown) InvalidateRect(field(window, meterId), nullptr, FALSE);
             if (duplex.active()) {
                 pollDuplex(window);
                 const auto rect = arrangeRect(window);
@@ -1613,9 +1696,30 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         const auto beforeGridClick = project;
         SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(area.left + 103, area.top + 42));
         const bool snapOk = playFrom && playFrom < frameAtTick(ticksPerBeat, project.tempo) && project == beforeGridClick;
+        const auto priorLayout = project;
+        const auto preparedBeforeLayout = prepared;
+        execute(window, beginnerLayoutId);
+        const bool beginnerOk = inspectorShown && browserShown && !mixerShown;
+        execute(window, mixLayoutId);
+        const bool mixLayoutOk = mixerShown && !inspectorShown && !browserShown;
+        execute(window, arrangeLayoutId);
+        const bool arrangeLayoutOk = inspectorShown && !mixerShown && !browserShown;
+        execute(window, proLayoutId);
+        const bool presetsOk = beginnerOk && mixLayoutOk && arrangeLayoutOk && mixerShown &&
+            inspectorShown && browserShown && prepared == preparedBeforeLayout && project == priorLayout &&
+            IsWindowEnabled(field(window, stopId));
+        SetDlgItemInt(window, panId, static_cast<UINT>(-50), TRUE);
+        execute(window, volumeApplyId);
+        SetDlgItemInt(window, masterId, 65, FALSE);
+        execute(window, masterApplyId);
+        CheckDlgButton(window, soloId, BST_CHECKED);
+        execute(window, soloId);
+        const bool mixerOk = project.tracks[1].pan == -50 && project.masterVolume == 65 && project.tracks[1].solo;
+        execute(window, undoId);
+        const bool soloUndoOk = !project.tracks[1].solo && project.masterVolume == 65;
         DestroyWindow(window);
         return editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
-               clipRedoOk && tracksOk && snapOk ? 0 : 1;
+               clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk ? 0 : 1;
     }
     ShowWindow(window, show);
     ACCEL shortcuts[] = {{FVIRTKEY | FCONTROL, 'Z', undoId}, {FVIRTKEY | FCONTROL, 'Y', redoId},

@@ -102,6 +102,7 @@ public:
 
     State state() const { return playbackState.load(); }
     unsigned framesPlayed() const { return played.load(); }
+    std::uint32_t meter() const { return peakMeter.load(std::memory_order_relaxed); }
 
     // The UI reads this only after the worker has been joined.
     const std::optional<WasapiOutputReport>& lastWasapiRun() const { return wasapiRun; }
@@ -114,6 +115,7 @@ public:
             requestStop();
             worker.join();
         }
+        peakMeter.store(0, std::memory_order_relaxed);
         playbackState.store(State::stopped);
     }
 
@@ -135,7 +137,7 @@ public:
         try {
             worker = std::jthread([this, session = std::move(session), startFrame, deviceId,
                                    wasapi = std::move(wasapi), duplex = std::move(duplex)](std::stop_token stopToken) mutable {
-                PlaybackMixer mixer(*session, decodeMuteMask(muteMask.load()), startFrame);
+                PlaybackMixer mixer(*session, decodeMuteMask(muteMask.load()), startFrame, &peakMeter);
                 if (wasapi) {
                     wasapiRun = runWasapiOutput(mixer, std::move(*wasapi), muteMask, played, stopToken,
                                                 duplex ? duplex->attempt() : 0, duplex ? &duplex->renderStarted : nullptr);
@@ -159,6 +161,7 @@ public:
 private:
     std::atomic<unsigned> muteMask{0};
     std::atomic<unsigned> played{0};
+    std::atomic<std::uint32_t> peakMeter{0};
     std::atomic<State> playbackState{State::stopped};
     bool lastUsedWasapi = false;
     std::optional<WasapiOutputReport> wasapiRun;

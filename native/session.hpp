@@ -3,6 +3,7 @@
 #include "project.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -37,13 +38,15 @@ private:
     friend class PlaybackMixer;
     std::vector<std::vector<float>> tracks;
     std::size_t sampleCount;
+    double masterGain;
 };
 
 class PlaybackMixer {
 public:
     static constexpr unsigned muteRampFrames = sampleRate / 200;
 
-    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame = 0);
+    PlaybackMixer(const SessionAudio& audio, const TrackMutes& initialMutes, std::size_t startFrame = 0,
+                  std::atomic<std::uint32_t>* peakMeter = nullptr);
     // Mix complete interleaved frames from the current position. No allocation.
     std::size_t read(std::span<std::int16_t> output, const TrackMutes& muted) noexcept;
     bool finished() const noexcept;
@@ -52,6 +55,7 @@ public:
 private:
     const SessionAudio& audio;
     std::size_t position = 0;
+    std::atomic<std::uint32_t>* peakMeter;
     std::array<unsigned, maxTracks> gains{};
 };
 

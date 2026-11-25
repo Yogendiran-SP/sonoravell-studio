@@ -89,3 +89,30 @@ beat, or Off. The ruler snaps to the nearest point, with ties later and the
 final point clamped inside the playable range. Inspector beat fields retain
 precise typed values. Grid and clip selection do not edit the Session or
 replace the playback snapshot.
+
+
+## Mixer and display-only layouts
+
+Each track has volume, stereo balance (Pan, −100 left through +100 right),
+mute, and solo. Mute takes precedence on any track. When one or more tracks
+are soloed, all other tracks are suppressed. Mute and solo use the existing
+bounded playback gain ramp. Volume, pan and master level are prepared into
+a new mixer snapshot and applying these edits stops playback. The master
+applies equally to both channels before PCM clipping. WAV export follows
+track mute/solo, balance and master level. The stereo meters show peaks from
+recent mixed output buffers, including clipping at full scale. They do not
+read the input, measure interface levels or determine hardware latency.
+
+The `SONOSESS` v3 mixer layout adds one master-level byte after the bars and
+one encoded pan byte (pan + 100) and one solo byte after each track's
+volume. The reader validates the new ranges. V1/v2 open with master at
+100%, centered pan and solo off. Save an upgraded copy under a new filename.
+Older versions of the application cannot read v3. Checkpoint and take
+recovery remain independent.
+
+Use Commands to select Beginner, Intermediate, Advanced, Pro, Arrange or
+Mix layouts and toggle individual panels. These views affect visibility for
+the open application only. Focus and presets retain transport controls. No
+view change edits the Session, rebuilds its prepared audio, or adds an undo
+entry. Docking, saved custom layouts and further progressive disclosure
+remain in the broader interface roadmap.

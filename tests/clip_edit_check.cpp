@@ -114,7 +114,7 @@ void checkMigration(const std::filesystem::path& dir) {
     editAudioClip(edited, 4, ClipEdit::trimStart, 3);
     const auto latest = dir / "edited.sonora";
     saveProject(latest, edited);
-    check(openProject(latest) == edited, "V2 must persist ID, source offset, length, and timeline tick.");
+    check(openProject(latest) == edited, "Round-trip must persist ID, source offset, length, and timeline tick.");
     SessionAutosave autosave;
     const auto recovery = dir / "recovery";
     autosave.checkpoint(recovery, edited);
@@ -124,7 +124,7 @@ void checkMigration(const std::filesystem::path& dir) {
     auto corrupt = edited;
     corrupt.tracks[0].clips[0].frameCount = std::numeric_limits<std::uint32_t>::max();
     rejects([&] { saveProject(latest, corrupt); });
-    check(openProject(latest) == edited, "A failed replacement must preserve the prior v2.");
+    check(openProject(latest) == edited, "A failed replacement must preserve the prior Session.");
     const auto torn = dir / "interrupted.sonora";
     std::filesystem::copy_file(latest, torn);
     std::filesystem::resize_file(torn, 64);
