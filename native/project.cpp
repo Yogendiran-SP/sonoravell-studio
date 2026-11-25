@@ -22,7 +22,7 @@
 
 namespace sonoravell {
 namespace {
-constexpr std::uint32_t schemaVersion = 2;
+constexpr std::uint32_t schemaVersion = 3;
 constexpr std::uint32_t maxEventsPerTrack = 16384;
 constexpr std::uint64_t maxMixSamples = 64ull * 1024 * 1024; // 256 MiB of float track audio.
 constexpr std::size_t maxNameLength = 200;
@@ -98,6 +98,7 @@ void writeProject(std::ostream& file, const Project& project) {
     writeName(file, project.name);
     writeNumber(file, project.tempo);
     writeNumber(file, project.bars);
+    writeNumber(file, project.masterVolume, 1);
     writeNumber(file, static_cast<std::uint32_t>(project.tracks.size()));
     for (const auto& track : project.tracks) {
         writeNumber(file, track.id);
@@ -105,6 +106,8 @@ void writeProject(std::ostream& file, const Project& project) {
         writeNumber(file, static_cast<std::uint8_t>(track.instrument), 1);
         writeNumber(file, track.muted, 1);
         writeNumber(file, track.volume, 1);
+        writeNumber(file, static_cast<unsigned>(track.pan + 100), 1);
+        writeNumber(file, track.solo, 1);
         writeNumber(file, static_cast<std::uint32_t>(track.notes.size()));
         for (const auto& note : track.notes) {
             writeNumber(file, note.tick);
@@ -133,11 +136,15 @@ void writeProject(std::ostream& file, const Project& project) {
 Project readProject(std::istream& file) {
     require(readTag<8>(file) == signature, "This is not a native Sonoravell Session.");
     const auto version = readNumber(file);
-    require(version == 1 || version == schemaVersion, "Unsupported Sonoravell Session version.");
+    require(version >= 1 && version <= schemaVersion, "Unsupported Sonoravell Session version.");
     Project project;
     project.name = readName(file);
     project.tempo = readNumber(file);
     project.bars = readNumber(file);
+    if (version >= 3) {
+        project.masterVolume = readNumber(file, 1);
+        require(project.masterVolume <= 100, "Invalid master level.");
+    }
     const auto trackCount = readNumber(file);
     require(trackCount <= maxTracks, "Too many tracks in the Session.");
     std::uint32_t legacyClipId = 0;
@@ -148,6 +155,13 @@ Project readProject(std::istream& file) {
         const auto muted = readNumber(file, 1);
         require(kind <= static_cast<unsigned>(Instrument::audio) && muted <= 1, "Invalid track format.");
         Track track{id, std::move(name), static_cast<Instrument>(kind), muted != 0, readNumber(file, 1), {}, {}};
+        if (version >= 3) {
+            const auto pan = readNumber(file, 1);
+            const auto solo = readNumber(file, 1);
+            require(pan <= 200 && solo <= 1, "Invalid track mixer settings.");
+            track.pan = static_cast<int>(pan) - 100;
+            track.solo = solo != 0;
+        }
         const auto notes = readNumber(file);
         require(notes <= maxEventsPerTrack, "Too many MIDI notes in the track.");
         for (std::uint32_t n = 0; n < notes; ++n) {
@@ -320,6 +334,7 @@ void validateProject(const Project& project) {
     validateName(project.name);
     require(project.tempo >= 30 && project.tempo <= 300 && project.bars >= 1 && project.bars <= maxBars,
             "Session tempo or length is outside the supported range.");
+    require(project.masterVolume <= 100, "Invalid master level.");
     require(project.tracks.size() <= maxTracks && project.assets.size() <= maxAssets, "Too many tracks or audio sources.");
     std::vector<std::uint32_t> assetIds;
     std::size_t totalSamples = 0;
@@ -338,7 +353,7 @@ void validateProject(const Project& project) {
         validateName(track.name);
         require(track.id && std::ranges::find(trackIds, track.id) == trackIds.end(), "Duplicate or invalid track ID.");
         trackIds.push_back(track.id);
-        require(track.instrument <= Instrument::audio && track.volume <= 100 &&
+        require(track.instrument <= Instrument::audio && track.volume <= 100 && track.pan >= -100 && track.pan <= 100 &&
                 track.notes.size() <= maxEventsPerTrack && track.clips.size() <= maxEventsPerTrack, "Invalid track settings.");
         require(track.instrument == Instrument::audio ? track.notes.empty() : track.clips.empty(),
                 "Track events do not match its type.");

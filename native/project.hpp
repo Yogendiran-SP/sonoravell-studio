@@ -58,6 +58,8 @@ struct Track {
     unsigned volume = 100;
     std::vector<MidiNote> notes;
     std::vector<AudioClip> clips;
+    int pan = 0;
+    bool solo = false;
     bool operator==(const Track&) const = default;
 };
 
@@ -67,6 +69,7 @@ struct Project {
     unsigned bars = 8;
     std::vector<Track> tracks;
     std::vector<AudioAsset> assets;
+    unsigned masterVolume = 100;
     bool operator==(const Project&) const = default;
 };
 

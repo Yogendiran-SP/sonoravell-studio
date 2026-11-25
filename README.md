@@ -11,22 +11,22 @@ GitHub Actions, extract it, and open `SonoravellStudio.exe`.
 
 | Workspace | What you can do |
 | --- | --- |
-| Transport | Record from the selected Windows input, play, stop, change tempo, and undo the last edit. Stop finalizes a disk-backed take as a new audio track. |
-| Arrange | See bars, MIDI notes, audio clips, and the playback cursor. Click the ruler to start playback from a beat, or click a track lane to select it. |
-| Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move the first audio clip or remove the selected track. |
-| Browser | Import a PCM WAV, create an instrument track, or place an existing Audio Pool source on another track. |
-| Mixer | Set the selected track's level and mute or unmute it during playback. |
+| Transport | Record from the selected Windows input, play, stop, change tempo, and undo or redo edits. Stop finalizes a disk-backed take as a new audio track. |
+| Arrange | See MIDI notes and waveform previews. Click a clip to inspect it or the ruler to set the playback start using the selected grid. |
+| Inspector | Add, update, or delete MIDI notes. Set beat, duration, and pitch in the Inspector. Move, trim, split, duplicate, or delete the selected audio clip. Rename or remove a track. |
+| Browser | Import a PCM WAV, create instrument or audio tracks, or place an Audio Pool source. |
+| Mixer | Set track volume and pan, mute or solo during playback, and adjust master level with stereo output peak meters. |
 | Focus | Expand Arrange and keep transport and file controls visible. |
 
 **Save as** writes a `.sonora` Session with embedded audio, MIDI, tempo, and track
-controls. **Open** restores it. **Export** writes 48 kHz, 16-bit stereo WAV. Import
+and master controls. **Open** reads versions 1, 2 and 3. Save a legacy Session to a new filename to preserve its original file. **Export** writes 48 kHz, 16-bit stereo WAV. Import
 supports mono and stereo 16-bit PCM WAV at 44.1 or 48 kHz. Use **Restore Session checkpoint…** in command search to restore an idle autosave with embedded audio. The native Session
 format has its own version and extension. Older browser project files require
 a separate migration path.
 
 Use Ctrl+F to focus **Find a command**, type a term, and press Enter to see matching
-commands. It also provides separate panel toggles and **Reset workspace**. Ctrl+O
-opens a Session, Ctrl+Shift+S opens Save As, and Ctrl+Z undoes the last edit.
+commands. It also provides panel toggles, Beginner–Pro display presets, and Arrange/Mix layouts. Ctrl+O
+opens a Session, Ctrl+Shift+S opens Save As, and Ctrl+Z and Ctrl+Y step through the last 24 edits.
 
 ## Build and test
 
