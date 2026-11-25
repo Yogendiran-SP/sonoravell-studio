@@ -24,7 +24,7 @@ Physical hardware acceptance remains open.
 - An [opt-in experimental WASAPI transport](WASAPI_DUPLEX.md) starts independent playback and capture workers with a prepared journal and recording-first coordination. Scripted endpoints exercise the simultaneous path. Live monitoring stays off.
 - The offline [hardware qualification tool](HARDWARE_QUALIFICATION.md) generates the reference Session and WAV, matches returned markers, and reports displacement, drift, and invalid evidence. The physical report template keeps hardware gates pending until measured.
 - A finalized experimental duplex take can export qualified attempt clocks and a PCM fingerprint beside its journal. This supports a checked QPC-to-signal comparison in the offline tool.
-- Master Effects exposes persistent gain, EQ, compressor and delay inserts with live bypass and bounded processing. The engine processes saved per-track chains before the fader. See [alpha integration](OFFLINE_ALPHA_INTEGRATION.md).
+- Master Effects and Track Effects expose persistent gain, EQ, compressor and delay inserts with live bypass and bounded processing. Track chains run before the fader. See [alpha integration](OFFLINE_ALPHA_INTEGRATION.md).
 - Live track volume, balance, mute, solo and master ramps with stereo output-buffer peaks. The render worker applies complete parameter snapshots without rebuilding its source audio. Native view presets, adjustable side panels and named workspace files are independent of playback and Session state. Offline WAV export and CLI render use the Session mixer.
 - Automated session and project checks; `workspace_check` on Windows; Actions CI.
 

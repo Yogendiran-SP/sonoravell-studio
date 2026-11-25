@@ -7,7 +7,8 @@ continues independently under the [Windows protocol](HARDWARE_QUALIFICATION.md).
 ## Master and track insert pipeline
 
 DSP-01, DSP-02, DSP-05, MIX-01, PRJ-01 and PRJ-04. Use Commands → Master Effects
-to open the modeless native insert editor. Add Gain, Parametric EQ, Compressor
+to open the modeless native insert editor for the master, or select a track
+and use Commands → Track Effects for that track. Add Gain, Parametric EQ, Compressor
 or Delay, select a named parameter, enter its indicated units, and choose Apply.
 Move up/down changes processing order. Bypass fades to or from the dry input
 over 240 frames (5 ms at 48 kHz). Disable removes the processor from the active
@@ -24,9 +25,10 @@ The engine order is dry source → track inserts → track balance and level
 (including mute/solo) → track sum → master inserts → playback click →
 master level → PCM and meters. Track processors also receive silence in
 gaps so their tails can continue. The offline renderer uses the same
-pipeline with the playback click off. The native master controls and
-persistent per-track engine paths have independent tests. The track
-editor uses the same commands in the next increment.
+pipeline with the playback click off. Master and track editing use the same commands, processor model and bounded
+prepare path. The Track Effects window stays attached to the selected track
+ID until reopened for another track. Deleting its track or opening another
+Session closes that editing view.
 
 | Operation | Processing state |
 | --- | --- |

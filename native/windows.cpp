@@ -54,10 +54,11 @@ enum ControlId {
     soloId, panLabelId, panId, masterLabelId, masterId, masterApplyId, meterId,
     beginnerLayoutId, intermediateLayoutId, advancedLayoutId, proLayoutId, arrangeLayoutId, mixLayoutId, recordLayoutId, composeLayoutId,
     loopId, rewindId, widerInspectorId, narrowerInspectorId, widerBrowserId, narrowerBrowserId,
-    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId
+    saveLayoutId, openLayoutId, pianoRollId, velocityUpId, velocityDownId, metronomeId, masterEffectsId, trackEffectsId
 };
 
 Project project = afterHoursProject();
+std::uint32_t effectTrackId = 0;
 std::shared_ptr<const SessionAudio> prepared;
 Output audio;
 Capture capture;
@@ -656,6 +657,20 @@ void refreshTransport(HWND window) {
     EnableWindow(field(window, loopId), !capture.active() && !playing);
 }
 
+void refreshEffects() {
+    if (!effectTrackId) {
+        refreshInsertEditor(project.masterInserts, !capture.active());
+        return;
+    }
+    const auto track = std::ranges::find(project.tracks, effectTrackId, &Track::id);
+    if (track == project.tracks.end()) {
+        hideInsertEditor();
+        effectTrackId = 0;
+        return;
+    }
+    refreshInsertEditor(track->inserts, !capture.active());
+}
+
 void refresh(HWND window, int index) {
     refreshTransport(window);
     refreshWaveforms();
@@ -686,7 +701,7 @@ void refresh(HWND window, int index) {
     EnableWindow(field(window, undoId), !capture.active() && history.canUndo());
     EnableWindow(field(window, redoId), !capture.active() && history.canRedo());
     refreshTrack(window);
-    refreshInsertEditor(project.masterInserts, !capture.active());
+    refreshEffects();
     const auto rect = arrangeRect(window);
     InvalidateRect(window, &rect, FALSE);
 }
@@ -775,11 +790,18 @@ void edit(HWND window, auto&& command, int index, EditImpact impact = EditImpact
     }
 }
 
-std::uint32_t editMasterInsert(HWND window, const InsertCommand& command) {
+std::uint32_t applyInsert(HWND window, std::uint32_t trackId, const InsertCommand& command) {
     if (capture.active()) throw std::runtime_error("Stop recording before editing effects.");
     auto selection = command.id;
-    edit(window, [&](Project& draft) { selection = editInserts(draft.masterInserts, command); }, selectedTrack(window),
-         command.action == InsertAction::toggleBypass ? EditImpact::liveMixer : EditImpact::restartProcessing);
+    edit(window, [&](Project& draft) {
+        if (!trackId) {
+            selection = editInserts(draft.masterInserts, command);
+        } else {
+            const auto track = std::ranges::find(draft.tracks, trackId, &Track::id);
+            if (track == draft.tracks.end()) throw std::runtime_error("The insert track is no longer in this Session.");
+            selection = editInserts(track->inserts, command);
+        }
+    }, selectedTrack(window), command.action == InsertAction::toggleBypass ? EditImpact::liveMixer : EditImpact::restartProcessing);
     return selection;
 }
 
@@ -792,6 +814,8 @@ void replayEdit(HWND window, bool redo) {
 }
 
 void installProject(HWND window, Project next) {
+    hideInsertEditor();
+    effectTrackId = 0;
     audio.stop();
     prepared.reset();
     project = std::move(next);
@@ -911,10 +935,10 @@ void showCommands(HWND window) {
          {widerBrowserId, L"Layout: Widen Browser"}, {narrowerBrowserId, L"Layout: Narrow Browser"},
          {saveLayoutId, L"Save workspace layout as..."}, {openLayoutId, L"Open workspace layout..."},
          {pianoRollId, L"Toggle Piano Roll"}, {velocityUpId, L"Increase selected MIDI velocity"},
-         {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}, {masterEffectsId, L"Master Effects..."}}) {
+         {velocityDownId, L"Decrease selected MIDI velocity"}, {metronomeId, L"Toggle playback metronome"}, {masterEffectsId, L"Master Effects..."}, {trackEffectsId, L"Track Effects..."}}) {
         if (!query.empty() && lowercase(entry.second).find(query) == std::wstring::npos) continue;
         const auto action = field(window, entry.first);
-        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId;
+        const bool needsIdle = entry.first == saveLayoutId || entry.first == openLayoutId || entry.first == masterEffectsId || entry.first == trackEffectsId;
         const bool available = entry.first == startDuplexId ? useWasapi && useWasapiCapture && !capture.active()
             : (!needsIdle || !capture.active()) && (!action || IsWindowEnabled(action));
         AppendMenuW(menu, MF_STRING | (available ? MF_ENABLED : MF_GRAYED),
@@ -1592,10 +1616,25 @@ void execute(HWND window, int id) {
         return;
     }
     if (capture.active()) return;
-    if (id == masterEffectsId) {
-        showInsertEditor(window, project.masterInserts, [window](const InsertCommand& command) {
-            return editMasterInsert(window, command);
+    if (id == masterEffectsId || id == trackEffectsId) {
+        const auto* list = &project.masterInserts;
+        auto title = std::wstring(L"Master Effects");
+        std::uint32_t trackId = 0;
+        if (id == trackEffectsId) {
+            const int index = selectedTrack(window);
+            if (index < 0 || static_cast<std::size_t>(index) >= project.tracks.size()) {
+                status(window, L"Select an audio or instrument track to edit its inserts.");
+                return;
+            }
+            const auto& track = project.tracks[index];
+            trackId = track.id;
+            title = L"Track Effects / " + wide(track.name);
+            list = &track.inserts;
+        }
+        showInsertEditor(window, title.c_str(), *list, [window, trackId](const InsertCommand& command) {
+            return applyInsert(window, trackId, command);
         });
+        effectTrackId = trackId;
         return;
     }
     if (id == metronomeId) {
@@ -2254,14 +2293,20 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int show) {
         execute(window, deleteNoteId);
         const bool pianoOk = pianoRoll && velocityOk && project.tracks[0].notes.empty();
         const auto effectSnapshot = renderedSession();
-        const auto gain = editMasterInsert(window, {InsertAction::add, 0, InsertKind::gain});
-        editMasterInsert(window, {InsertAction::parameter, gain, InsertKind::gain, 0, -60});
-        editMasterInsert(window, {InsertAction::toggleBypass, gain});
+        const auto gain = applyInsert(window, 0, {InsertAction::add, 0, InsertKind::gain});
+        applyInsert(window, 0, {InsertAction::parameter, gain, InsertKind::gain, 0, -60});
+        applyInsert(window, 0, {InsertAction::toggleBypass, gain});
         execute(window, undoId);
         const bool insertOk = prepared == effectSnapshot && project.masterInserts.size() == 1 &&
             project.masterInserts.front().values[0] == -60 && !project.masterInserts.front().bypassed;
+        const auto trackId = project.tracks.front().id;
+        const auto trackEffect = applyInsert(window, trackId, {InsertAction::add, 0, InsertKind::delay});
+        applyInsert(window, trackId, {InsertAction::toggleEnabled, trackEffect});
+        const auto& trackChain = project.tracks.front().inserts;
+        const bool trackInsertOk = trackChain.size() == 1 && !trackChain.front().enabled && prepared == effectSnapshot &&
+                                   project.masterInserts.front().kind == InsertKind::gain;
         DestroyWindow(window);
-        return insertOk && editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
+        return trackInsertOk && insertOk && editOk && updateOk && deleteOk && undoOk && viewOk && locateOk && redoOk && splitOk && clipUndoOk &&
                clipRedoOk && tracksOk && snapOk && presetsOk && mixerOk && soloUndoOk && transportOk && persistedLayoutOk && gesturesOk && dragCancelled && pianoOk ? 0 : 1;
     }
     ShowWindow(window, show);
